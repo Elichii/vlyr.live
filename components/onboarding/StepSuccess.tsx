@@ -264,7 +264,7 @@ export function StepSuccess({ data, onGoToDashboard }: StepSuccessProps) {
               >
                 <stat.icon size={16} className="text-[#FFE100]" />
                 <span className="text-sm font-bold text-foreground">{stat.value}</span>
-                <span className="text-[9px] text-muted-foreground uppercase tracking-wider">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">
                   {stat.label}
                 </span>
               </motion.div>
@@ -280,11 +280,11 @@ export function StepSuccess({ data, onGoToDashboard }: StepSuccessProps) {
           >
             {/* Label preview card */}
             <div className="flex-1 p-4 bg-card/50 border border-border/30 rounded-xl flex flex-col items-center gap-2">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Your Label Design
               </span>
               <canvas ref={canvasRef} className="rounded-lg" />
-              <span className="text-[9px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 First batch generating now
               </span>
             </div>
@@ -292,10 +292,10 @@ export function StepSuccess({ data, onGoToDashboard }: StepSuccessProps) {
             {/* Receipt card */}
             <div className="flex-1 p-4 bg-card/50 border border-border/30 rounded-xl text-left">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] text-muted-foreground font-medium tracking-wide uppercase">
+                <span className="text-xs text-muted-foreground font-medium tracking-wide uppercase">
                   Order Receipt
                 </span>
-                <span className="text-[10px] text-foreground font-mono font-semibold">
+                <span className="text-xs text-foreground font-mono font-semibold">
                   {orderId}
                 </span>
               </div>
@@ -395,7 +395,7 @@ export function StepSuccess({ data, onGoToDashboard }: StepSuccessProps) {
                       <span className="text-xs font-medium text-foreground block">
                         {kit.label}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {kit.desc}
                       </span>
                     </div>

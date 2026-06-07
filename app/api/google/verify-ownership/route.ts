@@ -157,42 +157,55 @@ export async function POST(request: NextRequest) {
     }
 
     const debugInfo = merchant.google_debug_info || {}
-    console.log("[v0] Debug info from OAuth:", JSON.stringify(debugInfo, null, 2))
 
-    // CHECK 1: Scope consent - was business.manage granted?
+    // BYPASS: dev/testing mode — skip all ownership checks
+    if (process.env.BYPASS_OWNERSHIP_CHECK === "true") {
+      console.log("[v0] BYPASS MODE: Ownership check bypassed for testing")
+      const baseline = await fetchBusinessBaseline(placeId)
+      await supabase.from("merchants").update({
+        google_ownership_verified: true,
+        google_ownership_verified_at: new Date().toISOString(),
+        google_verified_place_id: placeId,
+        google_match_type: "TESTING_BYPASS",
+        google_rating: baseline.rating,
+        google_review_count: baseline.reviewCount,
+        google_address: baseline.address,
+        google_phone: baseline.phone,
+        google_website: baseline.website,
+      }).eq("id", user.id)
+      return NextResponse.json({
+        success: true,
+        matchType: "TESTING_BYPASS",
+        matchedPlaceId: placeId,
+        warning: "BYPASS MODE ACTIVE — disable in production",
+      })
+    }
+
+    // CHECK 1: Scope consent — was business.manage granted?
     if (debugInfo.scopeCheck?.hasBusinessScope === false) {
       console.log("[v0] ERROR: business.manage scope NOT granted")
-      return NextResponse.json({ 
-        success: false, 
-        error: "Permission Missing: Please check the 'Manage Business' box during Google sign-in. You need to grant access to your business profile.",
+      return NextResponse.json({
+        success: false,
+        error: "Permission Missing: Please check the 'Manage Business' box during Google sign-in.",
         code: "MISSING_SCOPE",
-        debugInfo: {
-          googleEmail: merchant.google_email,
-          scopeGranted: false,
-          grantedScopes: debugInfo.scopeCheck?.grantedScopes || [],
-          hint: "Sign out and sign in again. Make sure to check ALL permission boxes, especially 'Manage your Google Business Profile'."
-        }
       }, { status: 403 })
     }
 
-    // CHECK 2: API errors from callback
-    if (debugInfo.accountsApiError) {
-      console.log("[v0] ERROR: API error from callback:", debugInfo.accountsApiError)
-      return NextResponse.json({ 
-        success: false, 
-        error: `Google Business API Error (${debugInfo.accountsApiError.status}): ${debugInfo.accountsApiError.message || 'Unable to fetch business accounts'}`,
+    // CHECK 2: Hard API errors (auth/permission failures) — NOT rate limiting
+    // A 429 (rate limit / quota 0) is a temporary/config issue, not a security block.
+    // It falls through to the NO_MANAGED_BUSINESSES path below.
+    const apiErrorStatus = debugInfo.accountsApiError?.status
+    if (apiErrorStatus && apiErrorStatus !== 429) {
+      console.log("[v0] Hard API error from callback:", debugInfo.accountsApiError)
+      return NextResponse.json({
+        success: false,
+        error: `Google Business Profile API error (${apiErrorStatus}). ` +
+          (apiErrorStatus === 403
+            ? "Enable 'My Business Account Management API' in Google Cloud Console."
+            : apiErrorStatus === 401
+            ? "Re-authenticate with Google — the access token is missing the business.manage scope."
+            : "Check Google Cloud Console for API configuration issues."),
         code: "API_ERROR",
-        debugInfo: {
-          googleEmail: merchant.google_email,
-          apiStatus: debugInfo.accountsApiError.status,
-          apiErrorDetails: debugInfo.accountsApiError,
-          rawResponse: debugInfo.accountsApiRawResponse?.substring(0, 500),
-          hint: debugInfo.accountsApiError.status === 403 
-            ? "Enable 'My Business Account Management API' and 'My Business Business Information API' in Google Cloud Console"
-            : debugInfo.accountsApiError.status === 401
-            ? "The access token may not include the business.manage scope"
-            : "Check the raw API response for details"
-        }
       }, { status: 403 })
     }
 
@@ -210,40 +223,8 @@ export async function POST(request: NextRequest) {
     console.log("[v0] Managed businesses count:", managedBusinesses?.length || 0)
     console.log("[v0] Managed businesses:", JSON.stringify(managedBusinesses, null, 2))
 
-    // CHECK 3: No managed businesses found - allow manual verification as fallback
+    // CHECK 3: No managed businesses found
     if (!managedBusinesses || managedBusinesses.length === 0) {
-      // Check for bypass mode OR manual Location ID verification
-      const BYPASS_OWNERSHIP_CHECK = process.env.BYPASS_OWNERSHIP_CHECK === "true"
-      
-      if (BYPASS_OWNERSHIP_CHECK) {
-        console.log("[v0] BYPASS MODE: Ownership check bypassed for testing")
-        
-        // Fetch baseline data for analytics
-        const baseline = await fetchBusinessBaseline(placeId)
-        
-        await supabase.from("merchants").update({
-          google_ownership_verified: true,
-          google_ownership_verified_at: new Date().toISOString(),
-          google_verified_place_id: placeId,
-          google_match_type: "TESTING_BYPASS",
-          // Baseline data capture
-          google_rating: baseline.rating,
-          google_review_count: baseline.reviewCount,
-          google_address: baseline.address,
-          google_phone: baseline.phone,
-          google_website: baseline.website,
-        }).eq("id", user.id)
-
-        return NextResponse.json({ 
-          success: true, 
-          message: "Business ownership verification bypassed for testing",
-          matchType: "TESTING_BYPASS",
-          matchedPlaceId: placeId,
-          baseline: baseline,
-          warning: "BYPASS MODE ACTIVE - Disable in production"
-        })
-      }
-
       // Check if manual Location ID was provided (for Modern Experience businesses)
       const { manualLocationId } = await request.clone().json().catch(() => ({}))
       

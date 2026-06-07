@@ -6,7 +6,7 @@ import { MapPin } from "lucide-react"
 interface ProfileMapProps {
   center: [number, number]
   markerPosition: [number, number] | null
-  onMapClick: (lat: number, lng: number) => void
+  onMapClick?: (lat: number, lng: number) => void
 }
 
 /**
@@ -44,7 +44,7 @@ export default function ProfileMap({
       const newLat = center[0] + zoomSpan * (0.5 - yPct)
       const newLng = center[1] + zoomSpan * (xPct - 0.5)
 
-      onMapClick(newLat, newLng)
+      onMapClick?.(newLat, newLng)
       setPinMode(false)
     },
     [center, hasMarker, onMapClick],

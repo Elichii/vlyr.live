@@ -25,10 +25,9 @@ export async function GET(request: NextRequest) {
   const isRedirectMode = searchParams.get("redirect") === "true"
   const state = isRedirectMode ? `redirect_${Date.now()}` : (searchParams.get("state") || `profile_${Date.now()}`)
   
-  // Build redirect URI - use Vercel production URL (allowed by Google)
-  // TODO: Update this domain when deploying to custom domain
-  const baseUrl = "https://v0-vlyr-product-engine.vercel.app"
-  const redirectUri = `${baseUrl}/api/google/callback`
+  // Derive base URL from the incoming request so this works on localhost AND production
+  const origin = new URL(request.url).origin
+  const redirectUri = `${origin}/api/google/callback`
 
   // Scopes for Google Sign-In + Business Profile API
   // Note: business.manage requires Google approval for production use

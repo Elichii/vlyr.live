@@ -44,12 +44,8 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get("state")
   const error = searchParams.get("error")
 
-  // Determine redirect destination based on state prefix
-  const isOnboarding = state?.startsWith("onboarding_")
-  const baseRedirect = isOnboarding ? "/onboarding" : "/dashboard/profile"
-
-  // Use the same base URL for all redirects
-  const baseUrl = "https://v0-vlyr-product-engine.vercel.app"
+  // Derive base URL from the incoming request so this works on localhost AND production
+  const baseUrl = new URL(request.url).origin
 
   // Initialize debug info
   const debugInfo: DebugInfo = {
@@ -180,7 +176,7 @@ export async function GET(request: NextRequest) {
       
       debugInfo.accountsApiStatus = accountsResponse.status
       debugInfo.accountsApiRawResponse = accountsRawText.substring(0, 1000)
-      debugInfo.accountsApiError = accountsResponse.ok ? null : accountsRawText
+      debugInfo.accountsApiError = accountsResponse.ok ? undefined : { status: accountsResponse.status, message: accountsRawText }
       
       let accounts: Array<{ name: string; type?: string; accountName?: string }> = []
       

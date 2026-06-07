@@ -27,7 +27,7 @@ function OnboardingContent() {
   const urlStep = searchParams.get("step") // For OAuth callback redirect
 
   // Validate URL params against real package IDs and billing cycles
-  const validPlanIds = PACKAGES.map((p) => p.id)
+  const validPlanIds = PACKAGES.map((p) => p.id) as string[]
   const paramPlan = rawPlan && validPlanIds.includes(rawPlan) ? rawPlan : null
   const paramCycle: "monthly" | "annual" | null =
     rawCycle === "monthly" || rawCycle === "annual" ? rawCycle : null
@@ -52,7 +52,7 @@ function OnboardingContent() {
   }
 
   // Use URL step param if provided (from OAuth callback), otherwise start at beginning
-  const initialStep = urlStep && allSteps.includes(urlStep as StepId) ? (urlStep as StepId) : allSteps[0]
+  const initialStep = urlStep && (allSteps as readonly string[]).includes(urlStep) ? (urlStep as StepId) : allSteps[0]
   const [step, setStep] = useState<StepId>(initialStep)
   const [data, setData] = useState<OnboardingData>({
     ...DEFAULT_ONBOARDING,
@@ -68,7 +68,7 @@ function OnboardingContent() {
 
   // Handle step from URL param (e.g., from OAuth callback)
   useEffect(() => {
-    if (urlStep && allSteps.includes(urlStep as StepId) && urlStep !== step) {
+    if (urlStep && (allSteps as readonly string[]).includes(urlStep) && urlStep !== step) {
       setStep(urlStep as StepId)
       // Clean up URL params after reading
       const newUrl = new URL(window.location.href)
@@ -120,7 +120,7 @@ function OnboardingContent() {
     checkResume()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const currentIndex = allSteps.indexOf(step)
+  const currentIndex = (allSteps as readonly string[]).indexOf(step)
   const progressSteps = allSteps.filter((s) => s !== "success")
 
   const goNext = () => {
@@ -150,80 +150,78 @@ function OnboardingContent() {
       {/* Left Side - Form Content */}
       <div className={`flex flex-col ${showMarketingPanel ? 'w-full lg:w-1/2' : 'w-full'}`}>
         {/* Header */}
-        <header className="flex items-center justify-between px-5 py-4 shrink-0 border-b border-border">
-          <div className="flex items-center gap-2.5">
-            <img
-              src="/images/vlyr-logo.png"
-              alt="VLYR"
-              className="h-6 w-auto"
-            />
-            <span className="text-border text-lg font-light select-none">|</span>
-            <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              Onboarding
-            </span>
+        <header className="shrink-0 border-b border-[#E5E5E5] bg-white sticky top-0 z-20 h-16">
+          <div className="max-w-7xl mx-auto px-6 lg:px-10 h-full flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img src="/images/vlyr-logo.png" alt="VLYR" className="h-7 w-auto" />
+              <div className="w-px h-4 bg-[#E5E5E5]" />
+              <span className="text-[#595959] text-xs font-semibold tracking-[0.1em] uppercase">Setup</span>
+            </div>
+            <div className="flex items-center gap-3">
+              {step !== "success" && (
+                <span className="text-sm text-[#595959] font-medium hidden sm:block">
+                  Step {currentIndex + 1} of {progressSteps.length}
+                </span>
+              )}
+              <button
+                onClick={() => router.push("/")}
+                className="text-sm font-semibold text-[#0A0A0A] border border-[#E5E5E5] px-4 py-1.5 rounded-full hover:border-[#0A0A0A] hover:rounded-xl transition-all duration-200"
+              >
+                Exit
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => router.push("/")}
-            className="text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
-          >
-            Back to home
-          </button>
         </header>
 
-        {/* Progress bar */}
+        {/* Progress indicator */}
         {step !== "success" && (
-          <div className="px-5 pb-4 pt-4">
-            <div className="flex items-center gap-1">
-              {progressSteps.map((s, i) => {
-                const verifyIndex = progressSteps.indexOf("google-connect")
-                const paymentIndex = progressSteps.indexOf("payment")
-                const isInVerifyToPaymentRange = currentIndex >= verifyIndex && currentIndex < paymentIndex
-                
-                let segmentProgress = "0%"
-                if (i < currentIndex) {
-                  segmentProgress = "100%"
-                } else if (i === currentIndex) {
-                  if (isInVerifyToPaymentRange && i === verifyIndex) {
-                    segmentProgress = "50%"
-                  } else if (isInVerifyToPaymentRange && i > verifyIndex && i < paymentIndex) {
-                    segmentProgress = "0%"
-                  } else {
-                    segmentProgress = "50%"
-                  }
-                }
-                
-                if (isInVerifyToPaymentRange && i > verifyIndex && i < currentIndex) {
-                  segmentProgress = "100%"
-                }
-                
-                return (
-                  <div key={s} className="flex-1 flex flex-col gap-1.5">
-                    <div className="h-1 rounded-full overflow-hidden bg-muted">
+          <div className="border-b border-[#E5E5E5] bg-white">
+            <div className="max-w-7xl mx-auto px-6 lg:px-10 pt-4 pb-4">
+              {/* Progress bars */}
+              <div className="flex items-center gap-1.5 mb-2">
+                {progressSteps.map((s, i) => {
+                  const isComplete = i < currentIndex
+                  const isActive = i === currentIndex
+                  return (
+                    <div key={s} className="flex-1 h-1 rounded-full overflow-hidden bg-[#EBEBEB]">
                       <motion.div
-                        className="h-full bg-foreground rounded-full"
+                        className={`h-full rounded-full ${isActive ? "bg-[#FFE100]" : isComplete ? "bg-[#0A0A0A]" : ""}`}
                         initial={{ width: "0%" }}
-                        animate={{ width: segmentProgress }}
+                        animate={{ width: isComplete ? "100%" : isActive ? "60%" : "0%" }}
                         transition={{ duration: 0.4, ease: "easeOut" }}
                       />
                     </div>
-                    <span
-                      className={`text-[10px] font-medium tracking-wide ${
-                        i <= currentIndex
-                          ? "text-foreground"
-                          : "text-muted-foreground/40"
-                      }`}
-                    >
-                      {STEP_META[s]?.label}
-                    </span>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+              {/* Step labels — hidden on small screens to avoid overflow */}
+              <div className="hidden sm:flex items-center gap-0">
+                {progressSteps.map((s, i) => {
+                  const isComplete = i < currentIndex
+                  const isActive = i === currentIndex
+                  return (
+                    <div key={s} className="flex-1 min-w-0">
+                      <span className={`text-[10px] font-bold tracking-wider uppercase transition-colors truncate block ${
+                        isActive ? "text-[#0A0A0A]" : isComplete ? "text-[#595959]" : "text-[#CCCCCC]"
+                      }`}>
+                        {STEP_META[s]?.label}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+              {/* Mobile: show only current step name */}
+              <div className="sm:hidden">
+                <span className="text-[10px] font-bold tracking-wider uppercase text-[#0A0A0A]">
+                  {STEP_META[step]?.label}
+                </span>
+              </div>
             </div>
           </div>
         )}
 
         {/* Step Content */}
-        <div className={`flex-1 flex ${isFullWidth ? "items-start justify-center" : ""} px-5 pb-8 pt-2 overflow-auto`}>
+        <div className={`flex-1 flex ${isFullWidth ? "items-start justify-center" : ""} px-4 sm:px-6 lg:px-10 pb-10 pt-6 overflow-auto`}>
           <div className={`w-full ${step === "plan" ? "max-w-4xl" : "max-w-lg"} mx-auto`}>
             <AnimatePresence mode="wait">
               {step === "plan" && (
@@ -255,17 +253,21 @@ function OnboardingContent() {
         </div>
 
         {/* Footer */}
-        <footer className="flex items-center justify-center px-5 py-5 shrink-0 bg-vlyr-dark">
-          <span className="text-[#FFFFFF]/40 text-[11px] font-medium tracking-wide">
-            Powered by VLYR
-          </span>
+        <footer className="shrink-0 border-t border-[#E5E5E5] bg-white">
+          <div className="max-w-7xl mx-auto px-6 lg:px-10 py-4 flex items-center justify-between">
+            <span className="text-xs text-[#666666] font-medium">© 2025 VLYR Inc.</span>
+            <div className="flex items-center gap-4">
+              <a href="/privacy" className="text-xs text-[#666666] hover:text-[#0A0A0A] transition-colors">Privacy</a>
+              <a href="/terms" className="text-xs text-[#666666] hover:text-[#0A0A0A] transition-colors">Terms</a>
+            </div>
+          </div>
         </footer>
       </div>
 
       {/* Right Side - Marketing Panel (Full Height, Independent Scroll) */}
       {showMarketingPanel && (
-        <div className="hidden lg:flex lg:w-1/2 border-l border-[#E6E6E6] h-svh sticky top-0 overflow-hidden">
-          <OnboardingMarketingPanel 
+        <div className="hidden lg:flex lg:w-1/2 h-svh sticky top-0 overflow-hidden">
+          <OnboardingMarketingPanel
             isVerified={step !== "google-connect"}
             businessRating={data.googleRating || 4.7}
             totalReviews={data.googleReviewCount || 62}

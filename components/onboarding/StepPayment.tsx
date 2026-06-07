@@ -1,8 +1,11 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { motion } from "framer-motion"
-import { CreditCard, Lock, ArrowLeft, ShieldCheck } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
+import {
+  CreditCard, Lock, ArrowLeft, ShieldCheck, CheckCircle2,
+  RotateCcw, Zap,
+} from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { VLYRInlineLoader } from "@/components/vlyr-loader"
@@ -25,8 +28,7 @@ export function StepPayment({ data, onNext, onBack }: StepPaymentProps) {
   const [persistError, setPersistError] = useState<string | null>(null)
 
   const pkg = PACKAGES.find((p) => p.id === data.packageId) ?? PACKAGES[1]
-  const recurringPrice =
-    data.billingCycle === "annual" ? pkg.annualPrice : pkg.monthlyPrice
+  const recurringPrice = data.billingCycle === "annual" ? pkg.annualPrice : pkg.monthlyPrice
 
   const hardwareTotal = useMemo(() => {
     let total = data.stickerQty * HARDWARE_PRICES.stickerRoll
@@ -57,7 +59,6 @@ export function StepPayment({ data, onNext, onBack }: StepPaymentProps) {
   const handlePay = async () => {
     setProcessing(true)
     setPersistError(null)
-
     try {
       const result = await persistOnboarding(data)
       if (!result.success) {
@@ -65,7 +66,6 @@ export function StepPayment({ data, onNext, onBack }: StepPaymentProps) {
         setProcessing(false)
         return
       }
-      // Brief delay for "Syncing Shield..." animation
       await new Promise((r) => setTimeout(r, 1500))
       onNext()
     } catch {
@@ -82,145 +82,193 @@ export function StepPayment({ data, onNext, onBack }: StepPaymentProps) {
       transition={{ duration: 0.35 }}
       className="flex flex-col gap-6 w-full"
     >
-      <div className="flex flex-col gap-1.5">
-        <h2 className="text-xl font-semibold text-foreground tracking-tight text-balance">
-          Secure Checkout
-        </h2>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          One payment covers your subscription and hardware. Shield activates immediately.
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-[#0A0A0A] tracking-tight mb-1">Secure checkout</h2>
+        <p className="text-sm text-[#666666]">
+          One payment activates your subscription and ships your hardware.
         </p>
       </div>
 
-      {persistError && (
-        <motion.div
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
-        >
-          {persistError}
-        </motion.div>
-      )}
+      {/* Trust bar */}
+      <div className="flex items-center justify-center gap-5 py-2.5 border-y border-[#E5E5E5]">
+        {[
+          { icon: Lock, label: "256-bit SSL" },
+          { icon: ShieldCheck, label: "PCI DSS Certified" },
+          { icon: RotateCcw, label: "30-day refund" },
+        ].map((item, i) => (
+          <div key={i} className="flex items-center gap-1.5 text-[#888888]">
+            <item.icon size={12} className="text-[#00a544]" />
+            <span className="text-sm font-medium">{item.label}</span>
+          </div>
+        ))}
+      </div>
 
-      {/* Card Form */}
-      <div className="flex flex-col gap-4 p-5 bg-card border border-border rounded-2xl">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <CreditCard size={16} />
-          <span className="text-xs font-medium tracking-wide uppercase">Card Details</span>
-          <Lock size={12} className="ml-auto" />
+      {/* Error */}
+      <AnimatePresence>
+        {persistError && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: "auto" }}
+            exit={{ opacity: 0 }}
+            className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm"
+          >
+            {persistError}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Card form */}
+      <div className="flex flex-col gap-3 p-5 bg-[#FAFAFA] border border-[#EBEBEB] rounded-2xl">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2 text-[#888888]">
+            <CreditCard size={14} />
+            <span className="text-xs font-semibold uppercase tracking-wide">Card details</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {/* Card brand indicators */}
+            {["V", "MC", "AX"].map((brand) => (
+              <span
+                key={brand}
+                className="text-xs font-bold text-[#AAAAAA] border border-[#E5E5E5] px-1.5 py-0.5 rounded"
+              >
+                {brand}
+              </span>
+            ))}
+          </div>
         </div>
 
+        {/* Name on card */}
         <Input
-          placeholder="Name on card"
+          placeholder="Cardholder name"
           value={nameOnCard}
           onChange={(e) => setNameOnCard(e.target.value)}
-          className="h-12 bg-background border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
+          className="h-12 rounded-xl bg-white border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:border-[#0A0A0A]"
         />
 
+        {/* Card number */}
         <div className="relative">
-          <CreditCard size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <CreditCard size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="4242 4242 4242 4242"
+            placeholder="1234 5678 9012 3456"
             value={cardNumber}
             onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-            className="pl-10 h-12 bg-background border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl font-mono"
+            className="pl-10 h-12 rounded-xl bg-white border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:border-[#0A0A0A] font-mono tracking-wider"
           />
+          {cardNumber.replace(/\s/g, "").length >= 15 && (
+            <CheckCircle2 size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-green-500" />
+          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {/* Expiry + CVC */}
+        <div className="grid grid-cols-2 gap-2.5">
           <Input
             placeholder="MM / YY"
             value={expiry}
             onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-            className="h-12 bg-background border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl font-mono"
+            className="h-12 rounded-xl bg-white border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:border-[#0A0A0A] font-mono"
           />
-          <Input
-            placeholder="CVC"
-            value={cvc}
-            onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").substring(0, 4))}
-            className="h-12 bg-background border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl font-mono"
-          />
+          <div className="relative">
+            <Input
+              placeholder="CVC"
+              value={cvc}
+              onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").substring(0, 4))}
+              className="h-12 rounded-xl bg-white border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:border-[#0A0A0A] font-mono pr-10"
+            />
+            <Lock size={13} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/40" />
+          </div>
         </div>
       </div>
 
-      {/* Recurring vs One-Time Breakdown */}
-      <div className="flex flex-col gap-3 p-4 bg-card border border-border rounded-2xl">
-        <span className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-          Payment Breakdown
-        </span>
+      {/* Payment breakdown */}
+      <div className="flex flex-col gap-2.5 p-4 bg-[#FAFAFA] border border-[#EBEBEB] rounded-2xl">
+        <p className="text-xs font-bold text-[#888888] uppercase tracking-widest mb-1">
+          Payment breakdown
+        </p>
 
-        {/* Recurring */}
-        <div className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-foreground/60 uppercase tracking-wide">
-            Recurring ({data.billingCycle === "annual" ? "Annual" : "Monthly"})
-          </span>
+        <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">{pkg.name} Plan</span>
-            <span className="text-foreground font-medium">${recurringPrice}/mo</span>
+            <span className="text-[#666666]">
+              {pkg.name} Plan <span className="text-xs">({data.billingCycle})</span>
+            </span>
+            <span className="font-medium text-[#0A0A0A]">${recurringPrice}/mo</span>
           </div>
+
+          {hardwareTotal > 0 && (
+            <>
+              <div className="h-px bg-[#E5E5E5] my-0.5" />
+              {data.stickerQty > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[#666666]">Sticker Roll ×{data.stickerQty}</span>
+                  <span className="font-medium text-[#0A0A0A]">${data.stickerQty * HARDWARE_PRICES.stickerRoll}</span>
+                </div>
+              )}
+              {data.acrylicStands && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[#666666]">Acrylic Stand</span>
+                  <span className="font-medium text-[#0A0A0A]">${HARDWARE_PRICES.acrylicStand}</span>
+                </div>
+              )}
+              {data.safetyDecals && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[#666666]">Safety Decals</span>
+                  <span className="font-medium text-[#0A0A0A]">${HARDWARE_PRICES.safetyDecal}</span>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
-        {/* One-Time */}
-        {hardwareTotal > 0 && (
-          <div className="flex flex-col gap-1 pt-2 border-t border-border">
-            <span className="text-[11px] font-medium text-foreground/60 uppercase tracking-wide">
-              One-Time Hardware
-            </span>
-            {data.stickerQty > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Sticker Roll x{data.stickerQty}</span>
-                <span className="text-foreground font-medium">${data.stickerQty * HARDWARE_PRICES.stickerRoll}</span>
-              </div>
-            )}
-            {data.acrylicStands && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Acrylic Stand</span>
-                <span className="text-foreground font-medium">${HARDWARE_PRICES.acrylicStand}</span>
-              </div>
-            )}
-            {data.safetyDecals && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Safety Decals</span>
-                <span className="text-foreground font-medium">${HARDWARE_PRICES.safetyDecal}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="h-px bg-border" />
+        <div className="h-px bg-[#E5E5E5] mt-1" />
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-foreground">Total Due Today</span>
-          <span className="text-xl font-bold text-foreground font-mono">${total}</span>
+          <span className="font-semibold text-[#0A0A0A]">Total due today</span>
+          <span className="text-2xl font-bold text-[#0A0A0A] tabular-nums">${total}</span>
         </div>
       </div>
 
+      {/* 30-day guarantee */}
+      <div className="flex items-start gap-3 p-4 rounded-2xl bg-[#FAFAFA] border border-[#EBEBEB]">
+        <div className="w-8 h-8 rounded-full bg-[#0A0A0A] flex items-center justify-center shrink-0 mt-0.5">
+          <ShieldCheck size={15} className="text-blue-600" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-[#0A0A0A]">30-Day money-back guarantee</p>
+          <p className="text-xs text-[#666666] mt-0.5 leading-relaxed">
+            Not seeing results? Contact us within 30 days for a full refund — no questions, no friction.
+          </p>
+        </div>
+      </div>
+
+      {/* Navigation */}
       <div className="flex items-center gap-3">
         <Button
           variant="outline"
           onClick={onBack}
           disabled={processing}
-          className="h-12 rounded-xl border-border bg-card text-foreground hover:bg-secondary flex-1"
+          className="h-12 rounded-full border-[#E5E5E5] bg-white text-[#0A0A0A] hover:border-[#0A0A0A] hover:rounded-xl flex-1 transition-all duration-200 font-semibold"
         >
-          <ArrowLeft size={18} className="mr-2" />
+          <ArrowLeft size={16} className="mr-2" />
           Back
         </Button>
         <Button
           onClick={handlePay}
           disabled={!canPay || processing}
-          className="h-12 rounded-xl bg-foreground text-background font-semibold text-base hover:bg-foreground/90 disabled:opacity-30 flex-[2]"
+          className="h-12 rounded-full bg-[#0A0A0A] text-white font-bold text-sm hover:bg-[#1F1F1F] hover:rounded-xl disabled:opacity-30 flex-[2] transition-all duration-200"
         >
           {processing ? (
-            <VLYRInlineLoader label="Syncing Shield..." />
+            <VLYRInlineLoader label="Activating shield..." />
           ) : (
             <>
-              <ShieldCheck size={16} className="mr-2" />
-              Deploy Shield - ${total}
+              <Zap size={15} className="mr-2" />
+              Pay ${total} · Activate Shield
             </>
           )}
         </Button>
       </div>
 
-      <p className="text-[11px] text-muted-foreground/60 text-center">
-        Secured with 256-bit SSL encryption. Cancel anytime.
+      <p className="text-center text-xs text-[#AAAAAA] flex items-center justify-center gap-1">
+        <Lock size={10} />
+        Secured with 256-bit SSL. Cancel anytime.
       </p>
     </motion.div>
   )

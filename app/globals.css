@@ -4,44 +4,45 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /* Exact vlyr.io marketing site design tokens */
   --background: #FFFFFF;
-  --foreground: #111111;
-  --card: #F7F7F7;
-  --card-foreground: #111111;
+  --foreground: #0A0A0A;
+  --card: #FAFAFA;
+  --card-foreground: #0A0A0A;
   --popover: #FFFFFF;
-  --popover-foreground: #111111;
-  --primary: #111111;
+  --popover-foreground: #0A0A0A;
+  --primary: #0A0A0A;
   --primary-foreground: #FFFFFF;
   --secondary: #F0F0F0;
-  --secondary-foreground: #111111;
+  --secondary-foreground: #0A0A0A;
   --muted: #F0F0F0;
-  --muted-foreground: #6B6B6B;
+  --muted-foreground: #888888;
   --accent: #FFE100;
-  --accent-foreground: #111111;
-  --destructive: #DC2626;
+  --accent-foreground: #0A0A0A;
+  --destructive: #C4841D;
   --destructive-foreground: #FFFFFF;
   --border: #E5E5E5;
-  --input: #E5E5E5;
-  --ring: #111111;
+  --input: #FAFAFA;
+  --ring: #0A0A0A;
   --chart-1: #FFE100;
   --chart-2: #C4841D;
   --chart-3: #E5E5E5;
-  --chart-4: #111111;
-  --chart-5: #6B6B6B;
-  --radius: 0.75rem;
-  --sidebar: #111111;
+  --chart-4: #0A0A0A;
+  --chart-5: #888888;
+  --radius: 0.625rem;
+  --sidebar: #0A0A0A;
   --sidebar-foreground: #FFFFFF;
   --sidebar-primary: #FFE100;
-  --sidebar-primary-foreground: #111111;
-  --sidebar-accent: #1A1A1A;
+  --sidebar-primary-foreground: #0A0A0A;
+  --sidebar-accent: #1F1F1F;
   --sidebar-accent-foreground: #FFFFFF;
   --sidebar-border: #2A2A2A;
   --sidebar-ring: #FFE100;
   --vlyr-yellow: #FFE100;
   --vlyr-amber: #C4841D;
-  --vlyr-surface: #F7F7F7;
+  --vlyr-surface: #FAFAFA;
   --vlyr-bg: #FFFFFF;
-  --vlyr-dark: #111111;
+  --vlyr-dark: #0A0A0A;
 }
 
 .dark {
@@ -130,6 +131,24 @@
     @apply bg-background text-foreground text-lg;
     font-family: var(--font-inter), "Inter", "Inter Fallback", system-ui, sans-serif;
   }
+  /* Figtree for all headings — matches vlyr.io marketing site */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-figtree), "Figtree", "Figtree Fallback", system-ui, sans-serif;
+  }
+}
+
+/* vlyr.io signature pill→rectangle button morph */
+.vlyr-btn {
+  border-radius: 9999px;
+  transition: border-radius 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+.vlyr-btn:hover {
+  border-radius: 1rem;
+}
+
+/* Input base styling matching vlyr.io */
+input, textarea, select {
+  font-family: var(--font-inter), "Inter", system-ui, sans-serif;
 }
 
 @keyframes vlyr-glow-pulse {

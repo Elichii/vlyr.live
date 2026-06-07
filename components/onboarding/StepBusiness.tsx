@@ -3,9 +3,10 @@
 import { useRef, useCallback, useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import dynamic from "next/dynamic"
-import { 
-  Building2, MapPin, Upload, ArrowRight, ArrowLeft, Search, ShieldCheck, X, 
-  AlertCircle, CheckCircle2, Phone, Mail, User, Globe, Star
+import {
+  Building2, MapPin, Upload, ArrowRight, ArrowLeft, Search,
+  X, CheckCircle2, Phone, Globe, Star,
+  AlertCircle
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -24,7 +25,7 @@ import { BUSINESS_CATEGORIES } from "@/lib/onboarding-types"
 const ProfileMap = dynamic(() => import("@/components/profile-map"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-44 rounded-xl bg-secondary border border-border/40 flex items-center justify-center">
+    <div className="w-full h-44 rounded-xl bg-secondary border border-border flex items-center justify-center">
       <VLYRInlineLoader />
     </div>
   ),
@@ -56,98 +57,60 @@ export function StepBusiness({ data, onChange, onNext, onBack }: StepBusinessPro
   const [showResults, setShowResults] = useState(false)
   const [logoUploading, setLogoUploading] = useState(false)
   const [logoError, setLogoError] = useState<string | null>(null)
-  
-  // Google Business Profile data
-  const [googleData, setGoogleData] = useState<{
-    businessName?: string
-    address?: string
-    phone?: string
-    category?: string
-    website?: string
-    rating?: number
-    totalReviews?: number
-    openingHours?: string[]
-  } | null>(null)
 
-  
-  // Check if business was pre-populated from Google
   const isGoogleVerified = !!data.googlePlaceId && data.googlePlaceId.startsWith("ChIJ")
 
-  // Contact info state
-  const [contactName, setContactName] = useState("")
-  const [contactEmail, setContactEmail] = useState("")
-  const [contactPhone, setContactPhone] = useState("")
-  
-  // State for editable Google fields - pre-populated from props
+  // Editable copies of Google-populated fields
   const [businessAddress, setBusinessAddress] = useState(data.googleAddress || "")
   const [businessPhone, setBusinessPhone] = useState(data.googlePhone || "")
   const [businessWebsite, setBusinessWebsite] = useState(data.googleWebsite || "")
 
-  // Set googleData from props (already fetched in StepGoogleConnect)
   useEffect(() => {
-    if (isGoogleVerified && data.googleRating) {
-      setGoogleData({
-        businessName: data.businessName,
-        address: data.googleAddress,
-        phone: data.googlePhone,
-        category: data.businessCategory,
-        website: data.googleWebsite,
-        rating: data.googleRating,
-        totalReviews: data.googleReviewCount || 0,
-      })
+    if (isGoogleVerified) {
+      setBusinessAddress(data.googleAddress || "")
+      setBusinessPhone(data.googlePhone || "")
+      setBusinessWebsite(data.googleWebsite || "")
     }
-  }, [isGoogleVerified, data.googleRating, data.businessName, data.googleAddress, data.googlePhone, data.businessCategory, data.googleWebsite, data.googleReviewCount])
+  }, [isGoogleVerified, data.googleAddress, data.googlePhone, data.googleWebsite])
 
-  // Upload logo to Supabase Storage immediately
-  const uploadLogo = useCallback(
-    async (file: File) => {
-      setLogoUploading(true)
-      setLogoError(null)
-      try {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) {
-          const preview = URL.createObjectURL(file)
-          onChange({ logoUrl: preview })
-          return
-        }
-        const ext = file.name.split(".").pop() || "png"
-        const path = `${user.id}/logo-${Date.now()}.${ext}`
-        const { error: upErr } = await supabase.storage
-          .from("logos")
-          .upload(path, file, { upsert: true, contentType: file.type })
-        if (upErr) throw upErr
-        const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path)
-        onChange({ logoUrl: urlData.publicUrl })
-      } catch (err) {
-        setLogoError(err instanceof Error ? err.message : "Upload failed")
-      } finally {
-        setLogoUploading(false)
+  const uploadLogo = useCallback(async (file: File) => {
+    setLogoUploading(true)
+    setLogoError(null)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        onChange({ logoUrl: URL.createObjectURL(file) })
+        return
       }
-    },
-    [onChange],
-  )
+      const ext = file.name.split(".").pop() || "png"
+      const path = `${user.id}/logo-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from("logos")
+        .upload(path, file, { upsert: true, contentType: file.type })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path)
+      onChange({ logoUrl: urlData.publicUrl })
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Upload failed")
+    } finally {
+      setLogoUploading(false)
+    }
+  }, [onChange])
 
-  const handleLogoUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      uploadLogo(file)
-    },
-    [uploadLogo],
-  )
+  const handleLogoUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    uploadLogo(file)
+  }, [uploadLogo])
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      const file = e.dataTransfer.files?.[0]
-      if (!file || !file.type.startsWith("image/")) return
-      uploadLogo(file)
-    },
-    [uploadLogo],
-  )
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (!file || !file.type.startsWith("image/")) return
+    uploadLogo(file)
+  }, [uploadLogo])
 
-  // Close search dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowResults(false)
@@ -156,7 +119,6 @@ export function StepBusiness({ data, onChange, onNext, onBack }: StepBusinessPro
     return () => document.removeEventListener("mousedown", handleClick)
   }, [])
 
-  // Debounced search via Nominatim
   const handleSearchChange = useCallback((q: string) => {
     setSearchQuery(q)
     if (searchTimer.current) clearTimeout(searchTimer.current)
@@ -182,12 +144,11 @@ export function StepBusiness({ data, onChange, onNext, onBack }: StepBusinessPro
   const selectResult = useCallback((result: NominatimResult) => {
     const lat = parseFloat(result.lat)
     const lng = parseFloat(result.lon)
-    const nameCandidate = result.display_name.split(",")[0]?.trim()
     onChange({
       googlePlaceId: String(result.place_id),
       lat,
       lng,
-      businessName: data.businessName || nameCandidate || "",
+      businessName: data.businessName || result.display_name.split(",")[0]?.trim() || "",
     })
     setShowResults(false)
     setSearchQuery(result.display_name.split(",").slice(0, 2).join(","))
@@ -200,9 +161,7 @@ export function StepBusiness({ data, onChange, onNext, onBack }: StepBusinessPro
       { headers: { "User-Agent": "VLYRApp/1.0" } },
     )
       .then((res) => res.json())
-      .then((d) => {
-        if (d.place_id) onChange({ googlePlaceId: String(d.place_id) })
-      })
+      .then((d) => { if (d.place_id) onChange({ googlePlaceId: String(d.place_id) }) })
       .catch(() => {})
   }, [onChange])
 
@@ -223,366 +182,287 @@ export function StepBusiness({ data, onChange, onNext, onBack }: StepBusinessPro
       transition={{ duration: 0.35 }}
       className="flex flex-col gap-6 w-full"
     >
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-foreground tracking-tight text-balance">
-            {isGoogleVerified ? "Review & Complete Details" : "Business Identity"}
+      {/* Header */}
+      <div>
+        <div className="flex items-center gap-2.5 mb-1">
+          <h2 className="text-2xl font-bold text-foreground tracking-tight">
+            {isGoogleVerified ? "Confirm your details" : "Your business"}
           </h2>
           {isGoogleVerified && (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 border border-green-500/20">
-              GOOGLE VERIFIED
+            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-[#f0fdf4] text-[#166534] border border-[#00a544]/20 uppercase tracking-wider">
+              <CheckCircle2 size={9} /> Google verified
             </span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          {isGoogleVerified 
-            ? "We've imported your business details from Google. Review and add any missing information."
-            : "Enter your business details and pin your location on the map."}
+        <p className="text-sm text-[#666666]">
+          {isGoogleVerified
+            ? "We imported your details from Google — review and update anything that looks off."
+            : "Enter your business information and pin your location on the map."}
         </p>
       </div>
 
-      {/* Google Verified Banner */}
+      {/* Google auto-import banner */}
       {isGoogleVerified && (
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/10 border border-green-500/20">
-          <CheckCircle2 size={18} className="text-green-500 shrink-0" />
-          <p className="text-xs text-green-400">
-            Business details imported from Google Business Profile
-          </p>
+        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#f0fdf4] border border-[#00a544]/20">
+          <div className="w-8 h-8 rounded-lg bg-[#00a544]/10 border border-[#00a544]/20 flex items-center justify-center shrink-0">
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-[#166534]">Imported from Google Business Profile</p>
+            <p className="text-xs text-[#16a34a]">Edit any field that needs updating below.</p>
+          </div>
         </div>
       )}
 
-
-
-      <div className="flex flex-col gap-4">
-        {/* Logo Uploader */}
-        <div className="flex flex-col gap-2">
-          <label className="text-xs text-muted-foreground font-medium tracking-wide uppercase">
-            Business Logo
-          </label>
-          <div className="flex items-center gap-4">
-            <div
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-              onClick={() => fileRef.current?.click()}
-              className="relative flex items-center justify-center w-16 h-16 rounded-full bg-card border-2 border-dashed border-border overflow-hidden shrink-0 cursor-pointer hover:border-foreground/30 transition-colors group"
-            >
-              {logoUploading ? (
-                <VLYRInlineLoader />
-              ) : data.logoUrl ? (
-                <img
-                  src={data.logoUrl}
-                  alt="Business logo"
-                  className="w-full h-full object-cover rounded-full"
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center gap-0.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors">
-                  <Upload size={16} />
-                </div>
-              )}
-              <div className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center w-5 h-5 rounded-full bg-accent border-2 border-background">
-                <ShieldCheck size={10} className="text-accent-foreground" />
-              </div>
-            </div>
-            <input ref={fileRef} type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-foreground font-medium">
-                {data.logoUrl ? "Logo uploaded" : "Upload logo"}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                Appears on all VLYR touchpoints
-              </span>
-              {data.logoUrl && (
-                <button
-                  type="button"
-                  onClick={() => onChange({ logoUrl: null })}
-                  className="text-[10px] text-destructive hover:underline text-left w-fit"
-                >
-                  Remove
-                </button>
-              )}
-              {logoError && (
-                <span className="text-[10px] text-red-400 flex items-center gap-1">
-                  <AlertCircle size={10} /> {logoError}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Business Name */}
-        <div className="relative">
-          <Building2 size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Business name"
-            value={data.businessName}
-            onChange={(e) => onChange({ businessName: e.target.value })}
-            className="pl-10 h-12 bg-card border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
-          />
-        </div>
-
-        {/* Category */}
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-muted-foreground font-medium tracking-wide uppercase">
-              Business Type
-            </label>
-            {googleData?.category && (
-              <span className="text-[10px] text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
-                Google: {googleData.category}
-              </span>
-            )}
-          </div>
-          <Select
-            value={data.businessCategory}
-            onValueChange={(val) => onChange({ businessCategory: val })}
+      {/* Logo */}
+      <div className="flex flex-col gap-2">
+        <label className="text-sm font-semibold text-[#0A0A0A] uppercase tracking-wider">Business logo</label>
+        <div className="flex items-center gap-4">
+          <div
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+            onClick={() => fileRef.current?.click()}
+            className="relative flex items-center justify-center w-16 h-16 rounded-2xl border-2 border-dashed border-[#E5E5E5] bg-[#FAFAFA] overflow-hidden shrink-0 cursor-pointer hover:border-[#0A0A0A] transition-all group"
           >
-            <SelectTrigger className="w-full h-12 bg-card border-border text-foreground rounded-xl">
-              <SelectValue placeholder="Select business category" />
-            </SelectTrigger>
-            <SelectContent className="bg-background border-border text-foreground">
-              {BUSINESS_CATEGORIES.map((cat) => (
-                <SelectItem key={cat} value={cat} className="text-foreground">
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Google Pre-populated Business Details (only show if Google verified) */}
-        {isGoogleVerified && (
-          <div className="flex flex-col gap-4 pt-2 pb-2 border-t border-border/50">
-            <label className="text-xs text-muted-foreground font-medium tracking-wide uppercase">
-              Business Details from Google
-            </label>
-            <p className="text-[11px] text-muted-foreground -mt-2">
-              Review and update if needed. These were imported from your Google Business Profile.
-            </p>
-
-            {/* Business Address */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-                Business Address
-              </label>
-              <div className="relative">
-                <MapPin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Business address"
-                  value={businessAddress}
-                  onChange={(e) => setBusinessAddress(e.target.value)}
-                  className="pl-10 h-11 bg-card border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
-                />
-              </div>
-            </div>
-
-            {/* Business Phone */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-                Business Phone
-              </label>
-              <div className="relative">
-                <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="tel"
-                  placeholder="Business phone"
-                  value={businessPhone}
-                  onChange={(e) => setBusinessPhone(e.target.value)}
-                  className="pl-10 h-11 bg-card border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
-                />
-              </div>
-            </div>
-
-            {/* Business Website */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-                Website
-              </label>
-              <div className="relative">
-                <Globe size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="url"
-                  placeholder="Business website"
-                  value={businessWebsite}
-                  onChange={(e) => setBusinessWebsite(e.target.value)}
-                  className="pl-10 h-11 bg-card border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
-                />
-              </div>
-            </div>
-
-            {/* Google Rating Display */}
-            {googleData?.rating && (
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-border">
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      size={14}
-                      className={star <= Math.round(googleData.rating || 0) ? "text-[#FBBF24] fill-[#FBBF24]" : "text-muted-foreground/30 fill-muted-foreground/30"}
-                    />
-                  ))}
-                </div>
-                <span className="text-sm font-semibold text-foreground">{googleData.rating.toFixed(1)}</span>
-                <span className="text-xs text-muted-foreground">({googleData.totalReviews || 0} reviews)</span>
-              </div>
+            {logoUploading ? (
+              <VLYRInlineLoader />
+            ) : data.logoUrl ? (
+              <img src={data.logoUrl} alt="Logo" className="w-full h-full object-cover rounded-2xl" />
+            ) : (
+              <Upload size={16} className="text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
             )}
           </div>
-        )}
-
-        {/* Contact Information Section */}
-        <div className="flex flex-col gap-3 pt-2">
-          <label className="text-xs text-muted-foreground font-medium tracking-wide uppercase">
-            Your Contact Information
-          </label>
-          <p className="text-[11px] text-muted-foreground -mt-1">
-            How can we reach you? This won&apos;t be shown to customers.
-          </p>
-
-          <div className="relative">
-            <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Your name"
-              value={contactName}
-              onChange={(e) => setContactName(e.target.value)}
-              className="pl-10 h-11 bg-card border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
-            />
-          </div>
-
-          <div className="relative">
-            <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="email"
-              placeholder="Your email"
-              value={contactEmail}
-              onChange={(e) => setContactEmail(e.target.value)}
-              className="pl-10 h-11 bg-card border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
-            />
-          </div>
-
-          <div className="relative">
-            <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="tel"
-              placeholder="Your phone (optional)"
-              value={contactPhone}
-              onChange={(e) => setContactPhone(e.target.value)}
-              className="pl-10 h-11 bg-card border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
-            />
-          </div>
-        </div>
-
-        {/* Location Section */}
-        <div className="flex flex-col gap-3 pt-2" ref={searchRef}>
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-muted-foreground font-medium tracking-wide uppercase flex items-center gap-1.5">
-              <MapPin size={12} className="text-accent" /> Business Location
-              {!isGoogleVerified && <span className="text-destructive ml-0.5">*</span>}
-            </label>
-            {isGoogleVerified && data.lat && data.lng && (
-              <span className="text-[10px] text-green-400 flex items-center gap-1">
-                <CheckCircle2 size={10} /> Auto-pinned
-              </span>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+          <div>
+            <p className="text-sm font-semibold text-[#0A0A0A]">{data.logoUrl ? "Logo uploaded" : "Upload your logo"}</p>
+            <p className="text-xs text-[#888888] mt-0.5">Appears on your VLYR QR labels</p>
+            {data.logoUrl && (
+              <button
+                type="button"
+                onClick={() => onChange({ logoUrl: null })}
+                className="text-xs text-red-500 hover:underline mt-1"
+              >
+                Remove
+              </button>
             )}
-          </div>
-
-          {!isGoogleVerified && (
-            <>
-              <p className="text-[11px] text-muted-foreground -mt-1.5">
-                Search for your business or click the map to place a pin.
+            {logoError && (
+              <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+                <AlertCircle size={10} /> {logoError}
               </p>
-
-              {/* Search Input */}
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  placeholder="Search address..."
-                  className="pl-9 pr-10 h-11 bg-card border-border text-foreground placeholder:text-muted-foreground/60 rounded-xl"
-                />
-                {isSearching && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2"><VLYRInlineLoader /></div>
-                )}
-                {searchQuery && !isSearching && (
-                  <button
-                    onClick={() => { setSearchQuery(""); setShowResults(false) }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              {/* Search Results Dropdown */}
-              <AnimatePresence>
-                {showResults && searchResults.length > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    className="bg-card border border-border rounded-xl shadow-lg max-h-40 overflow-auto"
-                  >
-                    {searchResults.map((r) => (
-                      <button
-                        key={r.place_id}
-                        onClick={() => selectResult(r)}
-                        className="w-full text-left px-3 py-2.5 hover:bg-secondary transition-colors border-b border-border/30 last:border-0 flex items-start gap-2"
-                      >
-                        <MapPin size={12} className="text-accent mt-0.5 shrink-0" />
-                        <span className="text-xs text-muted-foreground truncate">
-                          {r.display_name}
-                        </span>
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </>
-          )}
-
-          {/* Map */}
-          <div className="rounded-xl overflow-hidden border border-border">
-            <ProfileMap
-              center={mapCenter}
-              markerPosition={markerPosition}
-              onMapClick={isGoogleVerified ? undefined : handleMapClick}
-            />
+            )}
           </div>
-
-          {data.lat && data.lng && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-xl"
-            >
-              <MapPin size={12} className="text-green-500 shrink-0" />
-              <span className="text-[10px] text-muted-foreground font-mono">
-                {data.lat.toFixed(5)}, {data.lng.toFixed(5)}
-              </span>
-            </motion.div>
-          )}
         </div>
       </div>
 
+      {/* Business name */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-semibold text-[#0A0A0A] uppercase tracking-wider">Business name</label>
+        <div className="relative">
+          <Building2 size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Your business name"
+            value={data.businessName}
+            onChange={(e) => onChange({ businessName: e.target.value })}
+            className="pl-10 h-12 rounded-xl bg-[#FAFAFA] border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:border-[#0A0A0A]"
+          />
+        </div>
+      </div>
+
+      {/* Category */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-semibold text-[#0A0A0A] uppercase tracking-wider">Business type</label>
+        <Select value={data.businessCategory} onValueChange={(val) => onChange({ businessCategory: val })}>
+          <SelectTrigger className="h-12 rounded-xl bg-[#FAFAFA] border-[#E5E5E5] text-[#0A0A0A]">
+            <SelectValue placeholder="Select a category" />
+          </SelectTrigger>
+          <SelectContent className="bg-white border-[#E5E5E5] text-[#0A0A0A]">
+            {BUSINESS_CATEGORIES.map((cat) => (
+              <SelectItem key={cat} value={cat} className="text-[#0A0A0A]">{cat}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Google-imported contact details (editable) */}
+      {isGoogleVerified && (
+        <div className="flex flex-col gap-4 p-4 bg-[#FAFAFA] rounded-2xl border border-[#EBEBEB]">
+          <p className="text-sm font-semibold text-[#0A0A0A] uppercase tracking-wider">
+            Imported details — edit if needed
+          </p>
+
+          {/* Rating summary */}
+          {data.googleRating && (
+            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-white border border-[#E5E5E5]">
+              <div className="flex gap-0.5">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Star
+                    key={s}
+                    size={13}
+                    className={s <= Math.round(data.googleRating || 0)
+                      ? "fill-[#FFE100] text-[#FFE100]"
+                      : "text-[#E5E5E5] fill-[#E5E5E5]"}
+                  />
+                ))}
+              </div>
+              <span className="text-sm font-bold text-[#0A0A0A]">{data.googleRating?.toFixed(1)}</span>
+              <span className="text-sm text-[#888888]">({data.googleReviewCount || 0} reviews)</span>
+              <span className="ml-auto text-xs text-[#166534] font-semibold bg-[#f0fdf4] border border-[#00a544]/20 px-2 py-0.5 rounded-full">
+                Live on Google
+              </span>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3">
+            {/* Address */}
+            <div className="relative">
+              <MapPin size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Business address"
+                value={businessAddress}
+                onChange={(e) => setBusinessAddress(e.target.value)}
+                className="pl-10 h-11 rounded-xl bg-white border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:border-[#0A0A0A] text-sm"
+              />
+            </div>
+
+            {/* Phone */}
+            <div className="relative">
+              <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="tel"
+                placeholder="Business phone"
+                value={businessPhone}
+                onChange={(e) => setBusinessPhone(e.target.value)}
+                className="pl-10 h-11 rounded-xl bg-white border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:border-[#0A0A0A] text-sm"
+              />
+            </div>
+
+            {/* Website */}
+            <div className="relative">
+              <Globe size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="url"
+                placeholder="Business website"
+                value={businessWebsite}
+                onChange={(e) => setBusinessWebsite(e.target.value)}
+                className="pl-10 h-11 rounded-xl bg-white border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:border-[#0A0A0A] text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Location pin */}
+      <div className="flex flex-col gap-3" ref={searchRef}>
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold text-foreground/70 uppercase tracking-wide flex items-center gap-1.5">
+            <MapPin size={11} className="text-[#FFE100]" />
+            Location
+            {!isGoogleVerified && <span className="text-red-400 ml-0.5">*</span>}
+          </label>
+          {data.lat && data.lng && (
+            <span className="text-xs text-[#00a544] font-semibold flex items-center gap-1">
+              <CheckCircle2 size={10} />
+              {isGoogleVerified ? "Auto-pinned" : "Pinned"}
+            </span>
+          )}
+        </div>
+
+        {!isGoogleVerified && (
+          <>
+            <p className="text-xs text-[#888888] -mt-1">
+              Search your address or click the map to drop a pin.
+            </p>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Search address..."
+                className="pl-9 pr-10 h-11 rounded-xl bg-[#FAFAFA] border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA]"
+              />
+              {isSearching && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2"><VLYRInlineLoader /></div>
+              )}
+              {searchQuery && !isSearching && (
+                <button
+                  onClick={() => { setSearchQuery(""); setShowResults(false) }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            <AnimatePresence>
+              {showResults && searchResults.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className="bg-white border border-[#E5E5E5] rounded-xl shadow-md max-h-44 overflow-auto"
+                >
+                  {searchResults.map((r) => (
+                    <button
+                      key={r.place_id}
+                      onClick={() => selectResult(r)}
+                      className="w-full text-left px-3.5 py-2.5 hover:bg-[#F0F0F0] transition-colors border-b border-[#EBEBEB] last:border-0 flex items-start gap-2.5"
+                    >
+                      <MapPin size={12} className="text-[#FFE100] mt-0.5 shrink-0" />
+                      <span className="text-xs text-[#666666] leading-snug">{r.display_name}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
+        )}
+
+        <div className="rounded-xl overflow-hidden border border-[#E5E5E5] shadow-sm">
+          <ProfileMap
+            center={mapCenter}
+            markerPosition={markerPosition}
+            onMapClick={isGoogleVerified ? undefined : handleMapClick}
+          />
+        </div>
+
+        {data.lat && data.lng && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-2 px-3 py-2 bg-[#f0fdf4] border border-[#00a544]/20 rounded-xl"
+          >
+            <MapPin size={12} className="text-green-600 shrink-0" />
+            <span className="text-xs text-[#166534] font-mono">
+              {data.lat.toFixed(5)}, {data.lng.toFixed(5)}
+            </span>
+          </motion.div>
+        )}
+      </div>
+
       {/* Navigation */}
-      <div className="flex items-center gap-3 mt-2">
+      <div className="flex items-center gap-3 pt-2">
         <Button
           variant="outline"
           onClick={onBack}
-          className="h-12 rounded-xl border-border bg-card text-foreground hover:bg-secondary flex-1 transition-all active:scale-[0.98]"
+          className="h-12 rounded-full border-[#E5E5E5] bg-white text-[#0A0A0A] hover:border-[#0A0A0A] hover:rounded-xl flex-1 transition-all duration-200 font-semibold"
         >
-          <ArrowLeft size={18} className="mr-2" />
+          <ArrowLeft size={16} className="mr-2" />
           Back
         </Button>
         <Button
           onClick={onNext}
           disabled={!canProceed}
-          className="h-12 rounded-xl bg-foreground text-background font-semibold text-base hover:bg-foreground/90 disabled:opacity-30 flex-[2] transition-all active:scale-[0.98]"
+          className="h-12 rounded-full bg-[#0A0A0A] text-white font-semibold hover:bg-[#1F1F1F] hover:rounded-xl disabled:opacity-30 flex-[2] transition-all duration-200"
         >
           Continue
-          <ArrowRight size={18} className="ml-2" />
+          <ArrowRight size={16} className="ml-2" />
         </Button>
       </div>
     </motion.div>
