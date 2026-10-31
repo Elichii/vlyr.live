@@ -87,10 +87,11 @@ function shapePlaceResult(place: PlaceResult, apiKey: string) {
     if (CATEGORY_MAP[type]) { businessCategory = CATEGORY_MAP[type]; break }
   }
 
-  let logoUrl: string | null = null
-  if (place.photos?.[0]?.photo_reference) {
-    logoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${apiKey}`
-  }
+  // The photo is downloaded and stored server-side after verification
+  // (lib/google/profile-sync.ts). Never build a photo URL here: it would
+  // contain the Google API key and be sent to the browser.
+  void apiKey
+  const logoUrl: string | null = null
 
   let city = "", state = "", country = "", postalCode = ""
   for (const c of place.address_components ?? []) {

@@ -6,6 +6,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 interface TokenRefreshResult {
   success: boolean
@@ -86,7 +87,7 @@ export async function refreshGoogleToken(merchantId: string): Promise<TokenRefre
     if (data.error) {
       // If refresh token is invalid, user needs to re-authenticate
       if (data.error === "invalid_grant") {
-        await supabase.from("merchants").update({
+        await createAdminClient().from("merchants").update({
           google_refresh_token: null,
           google_access_token: null,
           google_token_expires_at: null,
@@ -104,7 +105,7 @@ export async function refreshGoogleToken(merchantId: string): Promise<TokenRefre
     const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString()
     
     // Store new access token
-    await supabase.from("merchants").update({
+    await createAdminClient().from("merchants").update({
       google_access_token: data.access_token,
       google_token_expires_at: expiresAt,
     }).eq("id", merchantId)

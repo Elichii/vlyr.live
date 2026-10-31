@@ -33,7 +33,19 @@ export function generateShortCodes(count: number): string[] {
 /**
  * Build the full scan URL for a short code.
  */
+/** Public address of the app (QR codes and invite links point here). */
+export function appBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_SCAN_BASE_URL ?? "https://vlyr.live").replace(/\/$/, "")
+}
+
 export function buildScanUrl(shortCode: string, baseUrl?: string): string {
-  const base = baseUrl ?? process.env.NEXT_PUBLIC_SCAN_BASE_URL ?? "https://vlyr.live"
+  const base = baseUrl ?? appBaseUrl()
   return `${base}/s/${shortCode}`
+}
+
+/** Invite link for a business (optional ref tracks who invited them). */
+export function buildInviteUrl(ref?: string): string {
+  const url = new URL(`${appBaseUrl()}/invite`)
+  if (ref) url.searchParams.set("ref", ref)
+  return url.toString()
 }

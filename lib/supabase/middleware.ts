@@ -87,9 +87,24 @@ export async function updateSession(request: NextRequest) {
   if (isDashboard && !isBillingBlocked && user) {
     const { data: merchant } = await supabase
       .from('merchants')
-      .select('subscription_status')
+      .select('subscription_status, business_name, google_ownership_verified, package_id, billing_cycle')
       .eq('id', user.id)
       .single()
+
+    // Only businesses whose ownership Google has confirmed can use the
+    // dashboard. Anyone else goes back to finish setup at the right step.
+    const verified = merchant?.google_ownership_verified === true
+    const hasBusiness = !!merchant?.business_name?.trim()
+    if (!verified || !hasBusiness) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      url.search = ''
+      url.searchParams.set('plan', merchant?.package_id || 'free')
+      url.searchParams.set('cycle', merchant?.billing_cycle === 'annual' ? 'annual' : 'monthly')
+      url.searchParams.set('step', verified ? 'business' : 'google-connect')
+      url.searchParams.set('setup', 'required')
+      return NextResponse.redirect(url)
+    }
 
     if (merchant?.subscription_status === 'past_due') {
       const url = request.nextUrl.clone()

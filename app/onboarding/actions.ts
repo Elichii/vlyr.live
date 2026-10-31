@@ -150,3 +150,40 @@ export async function persistOnboarding(data: OnboardingData) {
 
   return { success: true, error: null }
 }
+
+/**
+ * Free trial: save the merchant profile without creating an order or
+ * taking payment. Empty fields are left alone (e.g. Google sign-ups skip
+ * the email/password step, so their email is already on the account).
+ */
+export async function persistFreeOnboarding(data: OnboardingData) {
+  const supabase = await createClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) {
+    return { success: false, error: "Not authenticated. Please sign in again." }
+  }
+
+  const fields: Record<string, unknown> = {
+    email: data.email,
+    username: data.username,
+    phone: data.phone,
+    business_name: data.businessName,
+    business_category: data.businessCategory,
+    logo_url: data.logoUrl,
+    google_place_id: data.googlePlaceId,
+    lat: data.lat,
+    lng: data.lng,
+  }
+  const update: Record<string, unknown> = {
+    package_id: "free",
+    billing_cycle: "monthly",
+    updated_at: new Date().toISOString(),
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== null && value !== undefined && value !== "") update[key] = value
+  }
+
+  const { error } = await supabase.from("merchants").update(update).eq("id", user.id)
+  if (error) return { success: false, error: `Profile save failed: ${error.message}` }
+  return { success: true, error: null }
+}

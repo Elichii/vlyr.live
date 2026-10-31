@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { getValidGoogleToken } from "@/lib/google/token-refresh"
 
 type ManagedBusiness = {
@@ -129,7 +130,8 @@ export async function GET() {
 
   // Persist fetched businesses so verify-ownership can use them
   if (businesses.length > 0) {
-    await supabase.from("merchants").update({
+    // Protected field: only the server may store what Google returned
+    await createAdminClient().from("merchants").update({
       google_managed_businesses: businesses,
     }).eq("id", user.id)
   }

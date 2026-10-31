@@ -26,11 +26,11 @@ export async function GET(request: NextRequest) {
     // Get merchant's Google data
     const { data: merchant } = await supabase
       .from("merchants")
-      .select("google_location_id, google_connected, google_account_name, business_name")
+      .select("google_location_id, google_connected, google_ownership_verified, google_account_name, business_name")
       .eq("id", user.id)
       .single()
 
-    if (!merchant?.google_connected || !merchant?.google_location_id) {
+    if (!merchant?.google_ownership_verified || !merchant?.google_location_id) {
       return NextResponse.json({ error: "Google not connected", reviews: [] }, { status: 200 })
     }
 

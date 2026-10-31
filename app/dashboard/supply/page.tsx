@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import useSWR, { mutate } from "swr"
 import {
   ShoppingCart, QrCode, Layers, Sticker, CheckCircle2, Plus, Minus,
-  ArrowRight, RotateCcw, Package, CreditCard, ArrowLeft, Lock, X,
+  ArrowRight, RotateCcw, Package, CreditCard, ArrowLeft, Lock, X, Printer,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/client"
 import { VLYRLoader, VLYRInlineLoader } from "@/components/vlyr-loader"
 import { LabelDesigner } from "@/components/label-designer"
+import { PrintAtHomeLabels } from "@/components/print-at-home-labels"
 import type { LabelDesign } from "@/lib/label-types"
 
 const PRODUCTS = [
@@ -55,7 +56,7 @@ export default function SupplyShop() {
   const { data: lastOrder, isLoading } = useSWR("last-order", fetchLastOrder)
   const { data: merchant } = useSWR("merchant-supply", fetchMerchant)
   const [cart, setCart] = useState<Record<string, number>>({})
-  const [step, setStep] = useState<"shop" | "design" | "payment">("shop")
+  const [step, setStep] = useState<"shop" | "design" | "payment" | "print">("shop")
 
   // Label design state
   const labelDesignRef = useRef<LabelDesign | null>(null)
@@ -181,6 +182,17 @@ export default function SupplyShop() {
   }
 
   if (isLoading) return <VLYRLoader variant="card" message="Loading supply shop..." />
+
+  // ─── Print at home ────────────────────────────────────────────────
+  if (step === "print") {
+    return (
+      <PrintAtHomeLabels
+        businessName={merchant?.business_name || ""}
+        logoUrl={merchant?.logo_url || null}
+        onBack={() => setStep("shop")}
+      />
+    )
+  }
 
   // ─── Design Step ──────────────────────────────────────────────────
   if (step === "design") {
@@ -354,6 +366,26 @@ export default function SupplyShop() {
         </h1>
         <p className="text-sm text-muted-foreground mt-1">Order QR materials and accessories for your business</p>
       </div>
+
+      {/* Print at home (free) */}
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-card border border-[#FFE100]/30 rounded-2xl">
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl bg-[#FFE100]/10 border border-[#FFE100]/20 flex items-center justify-center shrink-0">
+            <Printer size={18} className="text-[#FFE100]" />
+          </div>
+          <div>
+            <span className="text-sm font-semibold text-foreground flex items-center gap-2">
+              Print labels at home <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">Free</Badge>
+            </span>
+            <span className="text-xs text-muted-foreground block mt-0.5 max-w-lg">
+              Download numbered QR labels as a PDF. Print on sticker paper, cut them out and stick one on every takeaway box.
+            </span>
+          </div>
+        </div>
+        <Button onClick={() => setStep("print")} className="bg-[#FFE100] text-[#111] hover:bg-[#FFE100]/90 rounded-xl font-semibold h-10 px-5 gap-2 shrink-0">
+          <Printer size={15} /> Print labels
+        </Button>
+      </motion.div>
 
       {/* Quick Reorder Banner */}
       {lastOrder && (

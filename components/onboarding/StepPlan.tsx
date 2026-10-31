@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
-import { Check, Minus, ArrowRight, ShieldCheck, Sparkles, Building2, Star } from "lucide-react"
+import { Check, Minus, ArrowRight, ShieldCheck, Sparkles, Building2, Star, Gift } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { OnboardingData } from "@/lib/onboarding-types"
 import { PACKAGES, PLAN_FEATURES } from "@/lib/onboarding-types"
@@ -15,6 +15,7 @@ interface StepPlanProps {
 }
 
 const TIER_ICONS: Record<string, React.ReactNode> = {
+  free: <Gift size={16} />,
   starter: <ShieldCheck size={16} />,
   growth: <Sparkles size={16} />,
   enterprise: <Building2 size={16} />,
@@ -86,7 +87,7 @@ export function StepPlan({ data, onChange, onNext }: StepPlanProps) {
       </div>
 
       {/* Plan cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         {PACKAGES.map((pkg, i) => {
           const price = billing === "annual" ? pkg.annualPrice : pkg.monthlyPrice
           const isSelected = data.packageId === pkg.id
@@ -156,10 +157,10 @@ export function StepPlan({ data, onChange, onNext }: StepPlanProps) {
                 </div>
                 <div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-bold tracking-tight text-[#0A0A0A]">${price}</span>
-                    <span className="text-sm text-[#888888]">/mo</span>
+                    <span className="text-3xl font-bold tracking-tight text-[#0A0A0A]">{price === 0 ? "Free" : `$${price}`}</span>
+                    {price > 0 && <span className="text-sm text-[#888888]">/mo</span>}
                   </div>
-                  {billing === "annual" && <p className="text-xs text-[#888888] mt-0.5">${price * 12}/yr · <span className="text-[#00a544]">Save ${(pkg.monthlyPrice - price) * 12}/yr</span></p>}
+                  {billing === "annual" && price > 0 && <p className="text-xs text-[#888888] mt-0.5">${price * 12}/yr · <span className="text-[#00a544]">Save ${(pkg.monthlyPrice - price) * 12}/yr</span></p>}
                   <p className="text-xs text-[#888888] mt-1.5">{pkg.tagline}</p>
                 </div>
                 <div className="h-px bg-[#E5E5E5]" />
@@ -177,7 +178,7 @@ export function StepPlan({ data, onChange, onNext }: StepPlanProps) {
                 </div>
                 <button onClick={(e) => { e.stopPropagation(); handleSelectPlan(pkg.id) }}
                   className={`w-full py-2.5 rounded-full text-sm font-semibold transition-all duration-200 hover:rounded-xl ${isSelected ? "bg-[#0A0A0A] text-white" : "border border-[#E5E5E5] text-[#0A0A0A] hover:border-[#0A0A0A]"}`}>
-                  {isSelected ? <span className="flex items-center justify-center gap-1.5"><Check size={13} /> Selected</span> : pkg.id === "enterprise" ? "Contact Sales" : `Choose ${pkg.name}`}
+                  {isSelected ? <span className="flex items-center justify-center gap-1.5"><Check size={13} /> Selected</span> : pkg.id === "enterprise" ? "Contact Sales" : pkg.id === "free" ? "Start free" : `Choose ${pkg.name}`}
                 </button>
               </div>
             </motion.div>

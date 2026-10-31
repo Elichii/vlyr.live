@@ -5,6 +5,8 @@
 // 3. Store new reviews in the database
 // 4. Trigger SMS alerts for new negative reviews (1-3 stars)
 
+import { alertText, alertsLive, optOutPhone } from "@/lib/sms-alerts"
+import { sendSms, smsStatus, TWILIO_OPTED_OUT } from "@/lib/sms"
 import { NextResponse } from "next/server"
 import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { getValidGoogleToken } from "@/lib/google/token-refresh"
@@ -53,7 +55,11 @@ export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization")
   const cronSecret = process.env.CRON_SECRET
   
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  // Vercel Cron sends "Authorization: Bearer $CRON_SECRET". Without a secret
+  // configured, only local development may run this (it calls Google for
+  // every business).
+  const allowed = cronSecret ? authHeader === `Bearer ${cronSecret}` : process.env.NODE_ENV === "development"
+  if (!allowed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   
@@ -228,67 +234,30 @@ export async function GET(request: Request) {
 }
 
 /**
- * Trigger SMS notification for negative review
+ * Text the manager about a new 1–3★ Google review (to their confirmed alert number).
  */
 async function triggerNegativeReviewSMS(
-  merchantId: string, 
+  merchantId: string,
   businessName: string,
-  review: GoogleReview, 
+  review: GoogleReview,
   starRating: number
 ): Promise<void> {
-  const didwwApiKey = process.env.DIDWW_API_KEY
-  const didwwFromNumber = process.env.DIDWW_FROM_NUMBER
-  
-  if (!didwwApiKey || !didwwFromNumber) {
-    console.log("[v0] DIDWW not configured, skipping SMS")
-    return
-  }
-  
+  if (!alertsLive()) return
   const supabase = getServiceClient()
-  
-  // Get merchant's phone number
-  const { data: merchant } = await supabase
-    .from("merchants")
-    .select("contact_phone, google_phone")
-    .eq("id", merchantId)
-    .single()
-  
-  const phoneNumber = merchant?.contact_phone || merchant?.google_phone
-  
-  if (!phoneNumber) {
-    console.log("[v0] No phone number for merchant, skipping SMS")
-    return
-  }
-  
-  // Compose SMS message
-  const reviewerName = review.reviewer?.displayName || "A customer"
-  const message = `VLYR Alert: ${reviewerName} left a ${starRating}-star review for ${businessName}. ` +
-    `"${review.comment?.substring(0, 100) || 'No comment'}"... ` +
-    `Respond now to protect your reputation.`
-  
-  // Send via DIDWW API
-  const response = await fetch("https://api.didww.com/v3/sms_outbound", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/vnd.api+json",
-      "Api-Key": didwwApiKey,
-    },
-    body: JSON.stringify({
-      data: {
-        type: "sms_outbound",
-        attributes: {
-          from: didwwFromNumber,
-          to: phoneNumber,
-          text: message,
-        },
-      },
-    }),
+  const { data: settings } = await supabase
+    .from("sms_alert_settings")
+    .select("phone, enabled")
+    .eq("merchant_id", merchantId)
+    .maybeSingle()
+  if (!settings?.enabled || !settings.phone) return
+
+  const reviewer = review.reviewer?.displayName || "A customer"
+  const text = alertText({ stars: starRating, businessName, seq: null, feedback: `Google review by ${reviewer}: ${review.comment || "no comment"}` })
+  const res = await sendSms(settings.phone, text)
+  await supabase.from("sms_messages").insert({
+    merchant_id: merchantId, to_phone: settings.phone, kind: "alert", status: smsStatus(res),
+    provider_id: res.ok ? res.id : null, error: res.ok ? null : res.error,
   })
-  
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`DIDWW API error: ${response.status} - ${errorText}`)
-  }
-  
-  console.log(`[v0] SMS sent to ${phoneNumber} for negative review`)
+  if (!res.ok && res.code === TWILIO_OPTED_OUT) await optOutPhone(settings.phone)
+  if (!res.ok) throw new Error(`SMS failed: ${res.error}`)
 }

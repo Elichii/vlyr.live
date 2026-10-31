@@ -27,7 +27,7 @@ export function StepPayment({ data, onNext, onBack }: StepPaymentProps) {
   const [processing, setProcessing] = useState(false)
   const [persistError, setPersistError] = useState<string | null>(null)
 
-  const pkg = PACKAGES.find((p) => p.id === data.packageId) ?? PACKAGES[1]
+  const pkg = PACKAGES.find((p) => p.id === data.packageId) ?? PACKAGES.find((p) => p.id === "growth")!
   const recurringPrice = data.billingCycle === "annual" ? pkg.annualPrice : pkg.monthlyPrice
 
   const hardwareTotal = useMemo(() => {

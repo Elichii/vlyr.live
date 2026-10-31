@@ -651,7 +651,7 @@ export default function MerchantIntakePage() {
             <a href="/privacy" className="text-[11px] text-[#666666] hover:text-[#0A0A0A] transition-colors">Privacy</a>
             <a href="/terms" className="text-[11px] text-[#666666] hover:text-[#0A0A0A] transition-colors">Terms</a>
           </div>
-          <span className="text-[11px] text-[#666666]">© 2025 VLYR Inc.</span>
+          <span className="text-[11px] text-[#666666]">© 2026 VLYR Inc.</span>
         </div>
       </footer>
 

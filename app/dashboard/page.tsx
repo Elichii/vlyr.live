@@ -8,9 +8,7 @@ import {
   ExternalLink, ArrowRight, CheckCircle2 
 } from "lucide-react"
 import {
-  AreaChart,
-  Area,
-  XAxis,
+    XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
@@ -20,6 +18,40 @@ import {
 } from "recharts"
 import { createClient } from "@/lib/supabase/client"
 import { VLYRLoader } from "@/components/vlyr-loader"
+import { CustomerActivityList, fetchActivity, type ActivityData } from "@/components/customer-activity"
+
+/** Ratings per day for the last 7 days (in the viewer's time zone). */
+function dailyRatings(recent: ActivityData["recent"]) {
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() - (6 - i))
+    return { start: d.getTime(), name: i === 6 ? "Today" : d.toLocaleDateString(undefined, { weekday: "short" }), happy: 0, unhappy: 0 }
+  })
+  for (const r of recent) {
+    const t = new Date(r.createdAt).getTime()
+    const day = [...days].reverse().find((d) => t >= d.start)
+    if (!day || r.rating === null) continue
+    if (r.rating >= 4) day.happy++
+    else day.unhappy++
+  }
+  return days
+}
+
+/** Private feedback vs customers invited to Google, per week for 4 weeks. */
+function weeklyShield(recent: ActivityData["recent"]) {
+  const now = Date.now()
+  const week = 7 * 24 * 60 * 60 * 1000
+  const weeks = [3, 2, 1, 0].map((ago) => ({ name: ago === 0 ? "This week" : `${ago} wk ago`, ago, shielded: 0, google: 0 }))
+  for (const r of recent) {
+    const ago = Math.floor((now - new Date(r.createdAt).getTime()) / week)
+    const w = weeks.find((x) => x.ago === ago)
+    if (!w || r.rating === null) continue
+    if (r.rating >= 4) w.google++
+    else w.shielded++
+  }
+  return weeks
+}
 
 interface GoogleReview {
   author: string
@@ -48,27 +80,11 @@ async function fetchGoogleReviews(): Promise<GoogleReviewsData> {
   }
 }
 
-// Placeholder chart data (populated with real data once scans accumulate)
-const scanData = [
-  { name: "Mon", scans: 0 },
-  { name: "Tue", scans: 0 },
-  { name: "Wed", scans: 0 },
-  { name: "Thu", scans: 0 },
-  { name: "Fri", scans: 0 },
-  { name: "Sat", scans: 0 },
-  { name: "Sun", scans: 0 },
-]
-
-const shieldData = [
-  { name: "W1", shielded: 0, public: 0 },
-  { name: "W2", shielded: 0, public: 0 },
-  { name: "W3", shielded: 0, public: 0 },
-  { name: "W4", shielded: 0, public: 0 },
-]
 
 interface MerchantData {
   business_name: string
   google_connected: boolean
+  google_ownership_verified: boolean
   google_account_name: string | null
   google_location_id: string | null
 }
@@ -89,7 +105,7 @@ async function fetchStats() {
       .eq("merchant_id", user.id),
     supabase
       .from("merchants")
-      .select("business_name, google_connected, google_account_name, google_location_id")
+      .select("business_name, google_connected, google_ownership_verified, google_account_name, google_location_id")
       .eq("id", user.id)
       .single(),
   ])
@@ -122,8 +138,10 @@ const item = {
 
 export default function DashboardOverview() {
   const { data: stats, isLoading } = useSWR("dashboard-stats", fetchStats)
+  const { data: activity, mutate: refreshActivity } = useSWR("dashboard-activity", () => fetchActivity(50), { refreshInterval: 30000 })
+  const a = activity?.stats
   const { data: reviewsData } = useSWR<GoogleReviewsData>(
-    stats?.merchant?.google_connected ? "google-reviews" : null,
+    stats?.merchant?.google_ownership_verified ? "google-reviews" : null,
     fetchGoogleReviews
   )
 
@@ -132,36 +150,45 @@ export default function DashboardOverview() {
   }
 
   const merchant = stats?.merchant
-  const googleConnected = merchant?.google_connected ?? false
+  // Verified ownership, not just "signed in with Google"
+  const googleConnected = merchant?.google_ownership_verified === true
   const reviews = reviewsData?.reviews ?? []
   const hasReviews = reviews.length > 0
 
   const STATS = [
     {
-      label: "Total Scans",
-      value: stats ? stats.totalScans.toLocaleString() : "0",
+      label: "Sticker scans",
+      value: a ? a.stickerScans.toLocaleString() : "0",
       change: "All time",
       icon: QrCode,
     },
     {
-      label: "Shielded Feedback",
-      value: stats ? String(stats.shielded) : "0",
-      change: "Intercepted",
-      icon: ShieldCheck,
-    },
-    {
-      label: "Avg Positive Rating",
-      value: stats?.avgRating ?? "0.0",
-      change: "From scans",
+      label: a?.avgRating ? `Ratings · avg ${a.avgRating}★` : "Ratings",
+      value: a ? String(a.ratings) : "0",
+      change: "From customers",
       icon: Star,
     },
     {
-      label: "Total Orders",
-      value: stats ? String(stats.totalOrders) : "0",
-      change: "All time",
+      label: "Need follow-up",
+      value: a ? String(a.needsFollowUp) : "0",
+      change: `${a?.privateFeedback ?? 0} kept private`,
+      icon: ShieldCheck,
+      alert: (a?.needsFollowUp ?? 0) > 0,
+    },
+    {
+      label: "Invited to Google",
+      value: a ? String(a.sentToGoogle) : "0",
+      change: `${a?.rewardsRedeemed ?? 0}/${a?.rewardsIssued ?? 0} rewards used`,
       icon: TrendingUp,
     },
   ]
+
+  const daily = dailyRatings(activity?.recent ?? [])
+  const weekly = weeklyShield(activity?.recent ?? [])
+  // Unresolved complaints first, then newest
+  const latest = [...(activity?.items ?? [])]
+    .sort((x, y) => Number((y.rating ?? 5) <= 3 && !y.resolvedAt) - Number((x.rating ?? 5) <= 3 && !x.resolvedAt))
+    .slice(0, 5)
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="flex flex-col gap-6">
@@ -190,7 +217,7 @@ export default function DashboardOverview() {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Connected to {merchant?.google_account_name || "Google Business Profile"}
+                    Verified owner of {merchant?.business_name || merchant?.google_account_name || "your Google Business Profile"}
                   </p>
                 </div>
               </div>
@@ -235,7 +262,7 @@ export default function DashboardOverview() {
           <motion.div
             key={stat.label}
             variants={item}
-            className="flex flex-col gap-2 p-4 bg-card border border-border rounded-xl"
+            className={`flex flex-col gap-2 p-4 bg-card border rounded-xl ${"alert" in stat && stat.alert ? "border-red-400/50" : "border-border"}`}
           >
             <div className="flex items-center justify-between">
               <stat.icon size={16} className="text-muted-foreground" />
@@ -243,7 +270,7 @@ export default function DashboardOverview() {
                 {stat.change}
               </span>
             </div>
-            <span className="text-2xl font-bold text-foreground tracking-tight">
+            <span className={`text-2xl font-bold tracking-tight ${"alert" in stat && stat.alert ? "text-red-400" : "text-foreground"}`}>
               {stat.value}
             </span>
             <span className="text-xs text-muted-foreground">{stat.label}</span>
@@ -260,37 +287,20 @@ export default function DashboardOverview() {
         >
           <div className="flex items-center gap-2">
             <BarChart3 size={16} className="text-muted-foreground" />
-            <span className="text-sm font-semibold text-foreground">Total Scans (7d)</span>
+            <span className="text-sm font-semibold text-foreground">Ratings, last 7 days</span>
           </div>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={scanData}>
-                <defs>
-                  <linearGradient id="scanGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#FFE100" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#FFE100" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <BarChart data={daily}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                 <XAxis dataKey="name" stroke="#666" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="#666" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="#666" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip
-                  contentStyle={{
-                    background: "#1a1a1a",
-                    border: "1px solid #333",
-                    borderRadius: "8px",
-                    color: "#fff",
-                    fontSize: "12px",
-                  }}
+                  contentStyle={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: "8px", color: "#fff", fontSize: "12px" }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="scans"
-                  stroke="#FFE100"
-                  strokeWidth={2}
-                  fill="url(#scanGradient)"
-                />
-              </AreaChart>
+                <Bar dataKey="happy" name="4–5 stars" stackId="r" fill="#FFE100" />
+                <Bar dataKey="unhappy" name="1–3 stars" stackId="r" fill="#f87171" radius={[4, 4, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </motion.div>
@@ -303,15 +313,15 @@ export default function DashboardOverview() {
           <div className="flex items-center gap-2">
             <ShieldCheck size={16} className="text-muted-foreground" />
             <span className="text-sm font-semibold text-foreground">
-              Shielded vs Public Reviews
+              Kept private vs invited to Google
             </span>
           </div>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={shieldData}>
+              <BarChart data={weekly}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                 <XAxis dataKey="name" stroke="#666" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="#666" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="#666" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{
                     background: "#1a1a1a",
@@ -321,13 +331,34 @@ export default function DashboardOverview() {
                     fontSize: "12px",
                   }}
                 />
-                <Bar dataKey="public" fill="#666" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="shielded" fill="#FFE100" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="shielded" name="Kept private (1–3★)" fill="#f87171" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="google" name="Invited to Google (4–5★)" fill="#FFE100" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </motion.div>
       </div>
+
+      {/* Customer activity */}
+      <motion.div variants={item} className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Customer activity</h2>
+            <p className="text-xs text-muted-foreground">
+              Who scanned, what they said, and how to reach them. Unhappy customers who still need a reply come first.
+            </p>
+          </div>
+          <Link href="/dashboard/feedback" className="text-xs font-medium text-[#FFE100] hover:underline underline-offset-4 flex items-center gap-1 shrink-0">
+            View all <ArrowRight size={12} />
+          </Link>
+        </div>
+        <CustomerActivityList
+          items={latest}
+          businessName={merchant?.business_name || "our team"}
+          onChanged={() => refreshActivity()}
+          emptyText="No ratings yet. Print your stickers from Supply Shop and put one on every order; ratings show up here within seconds."
+        />
+      </motion.div>
 
       {/* Google Reviews section */}
       {googleConnected ? (

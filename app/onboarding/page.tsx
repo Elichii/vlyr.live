@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { Suspense } from "react"
@@ -10,35 +10,50 @@ import { StepBusiness } from "@/components/onboarding/StepBusiness"
 import { StepGoogleConnect } from "@/components/onboarding/StepGoogleConnect"
 import { StepLogistics } from "@/components/onboarding/StepLogistics"
 import { StepPrintStudio } from "@/components/onboarding/StepPrintStudio"
+import { StepReputation } from "@/components/onboarding/StepReputation"
 import { StepPayment } from "@/components/onboarding/StepPayment"
 import { StepSuccess } from "@/components/onboarding/StepSuccess"
+import { StepFreeSuccess } from "@/components/onboarding/StepFreeSuccess"
 import { OnboardingOrderSummary } from "@/components/onboarding/OnboardingOrderSummary"
 import { OnboardingMarketingPanel } from "@/components/onboarding/OnboardingMarketingPanel"
-import { DEFAULT_ONBOARDING, PACKAGES, type OnboardingData } from "@/lib/onboarding-types"
+import { DEFAULT_ONBOARDING, PACKAGES, PLAN_ALIASES, isFreePlan, type OnboardingData } from "@/lib/onboarding-types"
 import { persistStepProgress, fetchOnboardingProgress } from "@/app/onboarding/actions"
 import { VLYRLoader } from "@/components/vlyr-loader"
+
+type StepId =
+  | "plan" | "auth" | "google-connect" | "business" | "logistics"
+  | "print-studio" | "reputation" | "payment" | "success"
+
+const PAID_STEPS: StepId[] = ["auth", "google-connect", "business", "logistics", "print-studio", "reputation", "payment", "success"]
+// Free trial: no shipping or payment. They design labels and download 15 stickers.
+const FREE_STEPS: StepId[] = ["auth", "google-connect", "business", "print-studio", "success"]
+
+function stepsFor(packageId: string | null | undefined, withPlanStep: boolean): StepId[] {
+  const steps = isFreePlan(packageId) ? FREE_STEPS : PAID_STEPS
+  return withPlanStep ? ["plan", ...steps] : steps
+}
 
 function OnboardingContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
   const rawPlan = searchParams.get("plan")
+  const resolvedPlan = rawPlan ? (PLAN_ALIASES[rawPlan] ?? rawPlan) : null
   const rawCycle = searchParams.get("cycle")
   const urlStep = searchParams.get("step") // For OAuth callback redirect
+  // Sent here from the dashboard because setup isn't finished
+  const setupRequired = searchParams.get("setup") === "required"
 
   // Validate URL params against real package IDs and billing cycles
   const validPlanIds = PACKAGES.map((p) => p.id) as string[]
-  const paramPlan = rawPlan && validPlanIds.includes(rawPlan) ? rawPlan : null
+  const paramPlan = resolvedPlan && validPlanIds.includes(resolvedPlan) ? resolvedPlan : null
   const paramCycle: "monthly" | "annual" | null =
     rawCycle === "monthly" || rawCycle === "annual" ? rawCycle : null
   const hasPlanParams = !!paramPlan && !!paramCycle
 
-  // Google verification now comes FIRST after auth to auto-populate business details
-  const allSteps = hasPlanParams
-    ? (["auth", "google-connect", "business", "logistics", "print-studio", "payment", "success"] as const)
-    : (["plan", "auth", "google-connect", "business", "logistics", "print-studio", "payment", "success"] as const)
-
-  type StepId = (typeof allSteps)[number]
+  // Google verification comes FIRST after auth to auto-populate business details.
+  // The step list depends on the chosen plan (free trial skips shipping and payment).
+  const initialSteps = stepsFor(paramPlan ?? "growth", !hasPlanParams)
 
   const STEP_META: Record<string, { label: string }> = {
     plan: { label: "Plan" },
@@ -47,18 +62,20 @@ function OnboardingContent() {
     business: { label: "Details" },
     logistics: { label: "Supply" },
     "print-studio": { label: "Labels" },
+    reputation: { label: "Impact" },
     payment: { label: "Payment" },
     success: { label: "Done" },
   }
 
   // Use URL step param if provided (from OAuth callback), otherwise start at beginning
-  const initialStep = urlStep && (allSteps as readonly string[]).includes(urlStep) ? (urlStep as StepId) : allSteps[0]
+  const initialStep = urlStep && (initialSteps as string[]).includes(urlStep) ? (urlStep as StepId) : initialSteps[0]
   const [step, setStep] = useState<StepId>(initialStep)
   const [data, setData] = useState<OnboardingData>({
     ...DEFAULT_ONBOARDING,
     packageId: paramPlan ?? "growth",
     billingCycle: paramCycle ?? "monthly",
   })
+  const allSteps = stepsFor(data.packageId, !hasPlanParams)
 
   const [resumeChecked, setResumeChecked] = useState(false)
 
@@ -66,18 +83,22 @@ function OnboardingContent() {
     setData((prev) => ({ ...prev, ...updates }))
   }, [])
 
-  // Handle step from URL param (e.g., from OAuth callback)
+  // Handle step from URL param (e.g., from OAuth callback). Apply it once only:
+  // the URL keeps the param, so re-applying it would undo every "Continue".
+  const urlStepHandled = useRef(false)
   useEffect(() => {
-    if (urlStep && (allSteps as readonly string[]).includes(urlStep) && urlStep !== step) {
+    if (urlStepHandled.current || !urlStep) return
+    urlStepHandled.current = true
+    if ((allSteps as readonly string[]).includes(urlStep) && urlStep !== step) {
       setStep(urlStep as StepId)
-      // Clean up URL params after reading
-      const newUrl = new URL(window.location.href)
-      newUrl.searchParams.delete("step")
-      newUrl.searchParams.delete("google_connected")
-      newUrl.searchParams.delete("business_name")
-      newUrl.searchParams.delete("location_id")
-      window.history.replaceState({}, "", newUrl.pathname + newUrl.search)
     }
+    // Clean up URL params after reading
+    const newUrl = new URL(window.location.href)
+    newUrl.searchParams.delete("step")
+    newUrl.searchParams.delete("google_connected")
+    newUrl.searchParams.delete("business_name")
+    newUrl.searchParams.delete("location_id")
+    window.history.replaceState({}, "", newUrl.pathname + newUrl.search)
   }, [urlStep, step, allSteps])
 
   // Resume from saved progress on mount (only for authenticated users)
@@ -99,8 +120,9 @@ function OnboardingContent() {
         const progress = await fetchOnboardingProgress()
         if (progress && progress.onboarding_step_index > 0) {
           const savedIndex = progress.onboarding_step_index
-          if (savedIndex < allSteps.length) {
-            setStep(allSteps[savedIndex])
+          const savedSteps = stepsFor(progress.package_id || data.packageId, !hasPlanParams)
+          if (savedIndex < savedSteps.length) {
+            setStep(savedSteps[savedIndex])
           }
           // Also restore plan choice if it was persisted
           if (progress.package_id && progress.billing_cycle) {
@@ -142,8 +164,8 @@ function OnboardingContent() {
   }
 
   // Show marketing panel from google-connect through payment
-  const showMarketingPanel = ["google-connect", "business", "logistics", "print-studio", "payment"].includes(step)
-  const isFullWidth = step === "plan" || step === "auth" || step === "success"
+  const showMarketingPanel = ["auth", "google-connect", "business", "logistics", "print-studio", "reputation", "payment"].includes(step)
+  const isFullWidth = step === "plan" || step === "success"
 
   return (
     <main className="min-h-svh bg-background flex">
@@ -221,8 +243,13 @@ function OnboardingContent() {
         )}
 
         {/* Step Content */}
-        <div className={`flex-1 flex ${isFullWidth ? "items-start justify-center" : ""} px-4 sm:px-6 lg:px-10 pb-10 pt-6 overflow-auto`}>
-          <div className={`w-full ${step === "plan" ? "max-w-4xl" : "max-w-lg"} mx-auto`}>
+        <div className={`flex-1 flex ${isFullWidth ? "items-start justify-center" : step === "auth" ? "lg:items-center" : ""} px-4 sm:px-6 lg:px-10 pb-10 pt-6 overflow-auto`}>
+          <div className={`w-full ${step === "plan" ? "max-w-6xl" : "max-w-lg"} mx-auto`}>
+            {setupRequired && (step === "google-connect" || step === "business") && (
+              <p className="mb-5 text-sm rounded-xl border border-[#FFE100]/40 bg-[#FFE100]/10 text-[#0A0A0A] p-3">
+                Finish verifying your business with Google to open your dashboard. Only verified owners can use VLYR.
+              </p>
+            )}
             <AnimatePresence mode="wait">
               {step === "plan" && (
                 <StepPlan key="plan" data={data} onChange={update} onNext={goNext} />
@@ -242,12 +269,17 @@ function OnboardingContent() {
               {step === "print-studio" && (
                 <StepPrintStudio key="print-studio" data={data} onChange={update} onNext={goNext} onBack={goBack} />
               )}
+              {step === "reputation" && (
+                <StepReputation key="reputation" data={data} onNext={goNext} onBack={goBack} />
+              )}
               {step === "payment" && (
                 <StepPayment key="payment" data={data} onNext={goNext} onBack={goBack} />
               )}
-              {step === "success" && (
+              {step === "success" && (isFreePlan(data.packageId) ? (
+                <StepFreeSuccess key="success" data={data} onGoToDashboard={() => router.push("/dashboard")} />
+              ) : (
                 <StepSuccess key="success" data={data} onGoToDashboard={() => router.push("/dashboard")} />
-              )}
+              ))}
             </AnimatePresence>
           </div>
         </div>
@@ -255,7 +287,7 @@ function OnboardingContent() {
         {/* Footer */}
         <footer className="shrink-0 border-t border-[#E5E5E5] bg-white">
           <div className="max-w-7xl mx-auto px-6 lg:px-10 py-4 flex items-center justify-between">
-            <span className="text-xs text-[#666666] font-medium">© 2025 VLYR Inc.</span>
+            <span className="text-xs text-[#666666] font-medium">© 2026 VLYR Inc.</span>
             <div className="flex items-center gap-4">
               <a href="/privacy" className="text-xs text-[#666666] hover:text-[#0A0A0A] transition-colors">Privacy</a>
               <a href="/terms" className="text-xs text-[#666666] hover:text-[#0A0A0A] transition-colors">Terms</a>
@@ -268,10 +300,13 @@ function OnboardingContent() {
       {showMarketingPanel && (
         <div className="hidden lg:flex lg:w-1/2 h-svh sticky top-0 overflow-hidden">
           <OnboardingMarketingPanel
-            isVerified={step !== "google-connect"}
+            isVerified={step !== "google-connect" && step !== "auth"}
             businessRating={data.googleRating || 4.7}
             totalReviews={data.googleReviewCount || 62}
             businessName={data.businessName || data.googleAccountName || "Your Business"}
+            businessAddress={data.googleAddress || undefined}
+            reviews={data.googleReviewsSnapshot}
+            googleConnected={data.googleConnected ? true : data.googleConnected === false ? false : undefined}
           />
         </div>
       )}

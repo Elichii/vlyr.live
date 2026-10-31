@@ -54,7 +54,7 @@ const PRODUCTS = [
 ]
 
 export function StepLogistics({ data, onChange, onNext, onBack }: StepLogisticsProps) {
-  const pkg = PACKAGES.find((p) => p.id === data.packageId) ?? PACKAGES[1]
+  const pkg = PACKAGES.find((p) => p.id === data.packageId) ?? PACKAGES.find((p) => p.id === "growth")!
   const recurringPrice = data.billingCycle === "annual" ? pkg.annualPrice : pkg.monthlyPrice
 
   const hardwareTotal = useMemo(() => {

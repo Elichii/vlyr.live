@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { ALREADY_CLAIMED_MESSAGE, claimedByOther } from "@/lib/ownership"
 
 /**
  * Business Ownership Verification with Debug Support
@@ -157,12 +159,19 @@ export async function POST(request: NextRequest) {
     }
 
     const debugInfo = merchant.google_debug_info || {}
+    const db = createAdminClient()
+
+    // One VLYR account per Google business
+    if (await claimedByOther(user.id, placeId)) {
+      return NextResponse.json({ success: false, error: ALREADY_CLAIMED_MESSAGE, code: "ALREADY_CLAIMED" }, { status: 409 })
+    }
 
     // BYPASS: dev/testing mode — skip all ownership checks
-    if (process.env.BYPASS_OWNERSHIP_CHECK === "true") {
+    // Never honoured outside local development, even if the variable is set
+    if (process.env.BYPASS_OWNERSHIP_CHECK === "true" && process.env.NODE_ENV === "development") {
       console.log("[v0] BYPASS MODE: Ownership check bypassed for testing")
       const baseline = await fetchBusinessBaseline(placeId)
-      await supabase.from("merchants").update({
+      await db.from("merchants").update({
         google_ownership_verified: true,
         google_ownership_verified_at: new Date().toISOString(),
         google_verified_place_id: placeId,
@@ -228,49 +237,17 @@ export async function POST(request: NextRequest) {
       // Check if manual Location ID was provided (for Modern Experience businesses)
       const { manualLocationId } = await request.clone().json().catch(() => ({}))
       
-      if (manualLocationId && typeof manualLocationId === 'string' && manualLocationId.includes('/')) {
-        console.log("[v0] Manual Location ID provided:", manualLocationId)
-        
-        // Verify the manual Location ID format: accounts/XXXX/locations/YYYY
-        const locationIdPattern = /^accounts\/\d+\/locations\/\d+$/
-        if (locationIdPattern.test(manualLocationId)) {
-          console.log("[v0] SUCCESS: Manual Location ID verified")
-          
-          // Fetch baseline data for analytics
-          const baseline = await fetchBusinessBaseline(placeId)
-          
-          await supabase.from("merchants").update({
-            google_ownership_verified: true,
-            google_ownership_verified_at: new Date().toISOString(),
-            google_verified_place_id: placeId,
-            google_verified_location_id: manualLocationId,
-            google_match_type: "MANUAL_LOCATION_ID",
-            // Baseline data capture
-            google_rating: baseline.rating,
-            google_review_count: baseline.reviewCount,
-            google_address: baseline.address,
-            google_phone: baseline.phone,
-            google_website: baseline.website,
-          }).eq("id", user.id)
-
-          return NextResponse.json({ 
-            success: true, 
-            message: "Business verified using manual Location ID",
-            matchType: "MANUAL_LOCATION_ID",
-            matchedPlaceId: placeId,
-            matchedLocationId: manualLocationId,
-            baseline: baseline
-          })
-        } else {
-          return NextResponse.json({ 
-            success: false, 
-            error: "Invalid Location ID format. Expected: accounts/123456789/locations/987654321",
-            code: "INVALID_LOCATION_ID"
-          }, { status: 400 })
-        }
+      // A typed-in Location ID can't prove ownership (anyone can type one),
+      // so it is no longer accepted. Owners must sign in with the Google
+      // account that manages the business.
+      if (manualLocationId) {
+        return NextResponse.json({
+          success: false,
+          error: "We can only verify businesses managed by the Google account you signed in with.",
+          code: "NOT_AUTHORIZED",
+        }, { status: 403 })
       }
 
-      console.log("[v0] No managed businesses found - returning with manual verification option")
       return NextResponse.json({ 
         success: false, 
         error: "No business profiles found for your Google account.",
@@ -304,7 +281,7 @@ export async function POST(request: NextRequest) {
       // Fetch baseline data for analytics
       const baseline = await fetchBusinessBaseline(placeId)
       
-      await supabase.from("merchants").update({
+      await db.from("merchants").update({
         google_ownership_verified: true,
         google_ownership_verified_at: new Date().toISOString(),
         google_verified_place_id: placeId,
@@ -350,7 +327,7 @@ export async function POST(request: NextRequest) {
       // Fetch baseline data for analytics
       const baseline = await fetchBusinessBaseline(placeId)
       
-      await supabase.from("merchants").update({
+      await db.from("merchants").update({
         google_ownership_verified: true,
         google_ownership_verified_at: new Date().toISOString(),
         google_verified_place_id: placeId,
@@ -394,7 +371,7 @@ export async function POST(request: NextRequest) {
         // Fetch baseline data for analytics
         const baseline = await fetchBusinessBaseline(placeId)
         
-        await supabase.from("merchants").update({
+        await db.from("merchants").update({
           google_ownership_verified: true,
           google_ownership_verified_at: new Date().toISOString(),
           google_verified_place_id: placeId,
@@ -442,7 +419,7 @@ export async function POST(request: NextRequest) {
           // Fetch baseline data for analytics
           const baseline = await fetchBusinessBaseline(placeId)
           
-          await supabase.from("merchants").update({
+          await db.from("merchants").update({
             google_ownership_verified: true,
             google_ownership_verified_at: new Date().toISOString(),
             google_verified_place_id: placeId,

@@ -9,9 +9,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
-import type { OnboardingData } from "@/lib/onboarding-types"
-import { ReputationAnalysis } from "./ReputationAnalysis"
-import { VerificationSuccess } from "./VerificationSuccess"
+import type { OnboardingData, ReviewSnapshot } from "@/lib/onboarding-types"
 
 interface ReviewData {
   author: string
@@ -47,7 +45,7 @@ interface StepGoogleConnectProps {
   onBack: () => void
 }
 
-type VerificationStep = "google-signin" | "select-business" | "reputation-analysis" | "verified"
+type VerificationStep = "google-signin" | "select-business" | "verified"
 
 // Google "G" SVG
 function GoogleIcon({ size = 20 }: { size?: number }) {
@@ -72,9 +70,7 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
   const [businessData, setBusinessData] = useState<GoogleBusinessData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isCheckingExisting, setIsCheckingExisting] = useState(true)
-  const [showReputationAnalysis, setShowReputationAnalysis] = useState(false)
   const [ownershipVerified, setOwnershipVerified] = useState(false)
-  const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [managedBusinessesFull, setManagedBusinessesFull] = useState<Array<{
     locationId: string
     placeId: string | null
@@ -199,12 +195,22 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
         return
       }
       const matchType = ownershipData.matchType ?? "VERIFIED"
-      const { error: updateError } = await supabase.from("merchants").update({ google_connected: true, google_ownership_verified: true, google_ownership_verified_at: new Date().toISOString(), google_verified_place_id: verifyData.placeId, google_location_id: ownershipData.matchedLocationId || verifyData.placeId, google_match_type: matchType, business_name: verifyData.businessName || manualBusinessName.trim(), business_category: verifyData.category || null, google_rating: verifyData.rating, google_review_count: verifyData.totalReviews, google_address: verifyData.address, google_phone: verifyData.phone, google_website: verifyData.website, lat: verifyData.lat, lng: verifyData.lng }).eq("id", user.id)
+      void matchType // ownership was recorded by the server in /api/google/verify-ownership
+      const { error: updateError } = await supabase.from("merchants").update({ business_name: verifyData.businessName || manualBusinessName.trim(), business_category: verifyData.category || null, google_rating: verifyData.rating, google_review_count: verifyData.totalReviews, google_address: verifyData.address, google_phone: verifyData.phone, google_website: verifyData.website, lat: verifyData.lat, lng: verifyData.lng }).eq("id", user.id)
       if (updateError) throw new Error(updateError.message)
       setBusinessData({ placeId: verifyData.placeId || "", businessName: verifyData.businessName || manualBusinessName.trim(), address: verifyData.address || "", phone: verifyData.phone ?? null, category: verifyData.category || "", lat: verifyData.lat ?? null, lng: verifyData.lng ?? null, website: verifyData.website ?? null, googleMapsUrl: verifyData.googleMapsUrl || businessUrl, reviewUrl: verifyData.reviewUrl || (verifyData.placeId ? `https://search.google.com/local/writereview?placeid=${verifyData.placeId}` : ""), rating: verifyData.rating ?? null, totalReviews: verifyData.totalReviews ?? 0, logoUrl: verifyData.logoUrl ?? null, openingHours: verifyData.openingHours ?? null, reviews: verifyData.reviews ?? [] })
+      onChange({
+        googleRating: verifyData.rating ?? undefined,
+        googleReviewCount: verifyData.totalReviews ?? undefined,
+        googleConnected: true,
+        googleReviewsSnapshot: (verifyData.reviews ?? [])
+          .slice(0, 6)
+          .map((r: ReviewSnapshot) => ({ author: r.author, rating: r.rating, text: r.text, relativeTime: r.relativeTime })),
+      })
+      // Fill address, phone, photo, etc. from Google (only empty fields)
+      fetch("/api/google/sync-profile", { method: "POST" }).catch(() => {})
       setOwnershipVerified(true)
-      setShowReputationAnalysis(true)
-      setStep("reputation-analysis")
+      setStep("verified")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to verify business")
     } finally {
@@ -229,12 +235,28 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
           if (fullRes.ok) { const d = await fullRes.json(); if (d.success) full = d }
         } catch { /* silent */ }
       }
-      const { error: updateError } = await supabase.from("merchants").update({ google_connected: true, google_ownership_verified: true, google_ownership_verified_at: new Date().toISOString(), google_verified_place_id: selectedBusiness.placeId, google_verified_location_id: selectedBusiness.locationId, google_location_id: selectedBusiness.locationId, google_match_type: "STRICT_API_SELECTION", business_name: full?.businessName || selectedBusiness.businessName, business_category: full?.category || null, google_rating: full?.rating ?? null, google_review_count: full?.totalReviews ?? null, google_address: full?.address || selectedBusiness.address || null, google_phone: full?.phone ?? null, google_website: full?.website ?? null, lat: full?.lat ?? null, lng: full?.lng ?? null }).eq("id", user.id)
+      // The server confirms this business is in the list Google returned and
+      // that no other VLYR account has it, then records the ownership
+      const claimRes = await fetch("/api/google/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationId: selectedBusiness.locationId, placeId: selectedBusiness.placeId }),
+      })
+      const claim = await claimRes.json()
+      if (!claim.success) throw new Error(claim.error || "We couldn't verify that business.")
+      const { error: updateError } = await supabase.from("merchants").update({ business_name: full?.businessName || selectedBusiness.businessName, business_category: full?.category || null, google_rating: full?.rating ?? null, google_review_count: full?.totalReviews ?? null, google_address: full?.address || selectedBusiness.address || null, google_phone: full?.phone ?? null, google_website: full?.website ?? null, lat: full?.lat ?? null, lng: full?.lng ?? null }).eq("id", user.id)
       if (updateError) throw new Error(updateError.message)
       setBusinessData({ placeId: full?.placeId || selectedBusiness.placeId || "", businessName: full?.businessName || selectedBusiness.businessName, address: full?.address || selectedBusiness.address || "", phone: full?.phone ?? null, category: full?.category || "", lat: full?.lat ?? null, lng: full?.lng ?? null, website: full?.website ?? null, googleMapsUrl: full?.googleMapsUrl ?? null, reviewUrl: full?.reviewUrl || (selectedBusiness.placeId ? `https://search.google.com/local/writereview?placeid=${selectedBusiness.placeId}` : ""), rating: full?.rating ?? null, totalReviews: full?.totalReviews ?? 0, logoUrl: full?.logoUrl ?? null, openingHours: full?.openingHours ?? null, reviews: full?.reviews ?? [] })
+      onChange({
+        googleRating: full?.rating ?? undefined,
+        googleReviewCount: full?.totalReviews ?? undefined,
+        googleConnected: true,
+        googleReviewsSnapshot: (full?.reviews ?? [])
+          .slice(0, 6)
+          .map((r: ReviewSnapshot) => ({ author: r.author, rating: r.rating, text: r.text, relativeTime: r.relativeTime })),
+      })
       setOwnershipVerified(true)
-      setShowReputationAnalysis(true)
-      setStep("reputation-analysis")
+      setStep("verified")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect business")
     } finally {
@@ -252,7 +274,9 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
 
   useEffect(() => {
     const checkOAuthCompletion = async () => {
-      const pending = sessionStorage.getItem("vlyr-oauth-pending")
+      // Also runs right after "Sign up with Google", which returns with ?oauth_complete=true
+      const pending = sessionStorage.getItem("vlyr-oauth-pending") ||
+        new URLSearchParams(window.location.search).get("oauth_complete")
       if (!pending) return
       sessionStorage.removeItem("vlyr-oauth-pending")
       sessionStorage.removeItem("vlyr-oauth-return-step")
@@ -361,7 +385,7 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
               { label: "Location pinned", sub: "From Maps" },
             ].map((item) => (
               <div key={item.label} className="flex flex-col gap-1 p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-2xl">
-                <CheckCircle2 size={14} className="text-[#00a544]" />
+                <CheckCircle2 size={14} className="text-[#B8860B]" />
                 <p className="text-xs font-semibold text-[#0A0A0A] mt-1">{item.label}</p>
                 <p className="text-sm text-[#888888]">{item.sub}</p>
               </div>
@@ -380,14 +404,14 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
             )}
           </AnimatePresence>
 
-          {/* Google sign-in button */}
+          {/* Primary: Google sign-in */}
           <button
             onClick={handleGoogleSignIn}
             disabled={isConnecting}
-            className="flex items-center justify-center gap-3 w-full h-14 rounded-full bg-white border-2 border-[#E5E5E5] text-[#0A0A0A] font-semibold text-[15px] hover:border-[#0A0A0A] hover:rounded-2xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            className="flex items-center justify-center gap-3 w-full h-14 rounded-2xl bg-[#FFE100] text-[#0A0A0A] font-bold text-[15px] hover:bg-[#FFE100]/90 hover:shadow-[0_0_28px_rgba(255,225,0,0.3)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isConnecting ? (
-              <><Loader2 size={18} className="animate-spin text-[#888888]" /> Connecting to Google…</>
+              <><Loader2 size={18} className="animate-spin text-[#0A0A0A]/60" /> Connecting to Google…</>
             ) : (
               <><GoogleIcon size={20} /> Continue with Google</>
             )}
@@ -395,6 +419,25 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
 
           <p className="text-center text-xs text-[#AAAAAA]">
             You'll choose which business to connect on the next screen
+          </p>
+
+          {/* Escape hatch — quiet, for managers / multi-account edge cases */}
+          <div className="flex items-center gap-3 my-1">
+            <div className="flex-1 h-px bg-[#F0F0F0]" />
+            <span className="text-[11px] text-[#CCCCCC] font-medium">or</span>
+            <div className="flex-1 h-px bg-[#F0F0F0]" />
+          </div>
+          <p className="text-center text-xs text-[#AAAAAA]">
+            Don't have access to your Google account right now?{" "}
+            <button
+              onClick={onNext}
+              className="text-[#595959] font-semibold underline underline-offset-2 hover:text-[#0A0A0A] transition-colors"
+            >
+              Set up manually instead
+            </button>
+          </p>
+          <p className="text-center text-[10px] text-[#CCCCCC] leading-relaxed -mt-1">
+            Your shield activates once Google is connected from the dashboard.
           </p>
         </div>
       )}
@@ -644,48 +687,24 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
       )}
 
       {/* ── Navigation ────────────────────────────────────────────────────── */}
-      {step !== "reputation-analysis" && (
-        <div className="flex items-center gap-3 pt-1">
+      <div className="flex items-center gap-3 pt-1">
+        <button
+          onClick={onBack}
+          className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full border border-[#E5E5E5] bg-white text-[#0A0A0A] text-sm font-semibold hover:border-[#0A0A0A] hover:rounded-2xl transition-all duration-200 flex-1"
+        >
+          <ArrowLeft size={15} /> Back
+        </button>
+
+        {step === "verified" && ownershipVerified && (
           <button
-            onClick={onBack}
-            className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full border border-[#E5E5E5] bg-white text-[#0A0A0A] text-sm font-semibold hover:border-[#0A0A0A] hover:rounded-2xl transition-all duration-200 flex-1"
+            onClick={onNext}
+            className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full bg-[#FFE100] text-[#0A0A0A] text-sm font-bold hover:bg-[#FFE100]/90 hover:rounded-2xl transition-all duration-200 flex-[2]"
           >
-            <ArrowLeft size={15} /> Back
+            Continue <ArrowRight size={15} />
           </button>
-
-          {/* Only show Continue when verified */}
-          {step === "verified" && ownershipVerified && (
-            <button
-              onClick={() => {
-                if (businessData?.rating && businessData?.totalReviews > 0) setShowReputationAnalysis(true)
-                else onNext()
-              }}
-              className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full bg-[#0A0A0A] text-white text-sm font-bold hover:bg-[#1F1F1F] hover:rounded-2xl transition-all duration-200 flex-[2]"
-            >
-              View Reputation Report <ArrowRight size={15} />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* ── Modals (logic unchanged) ───────────────────────────────────────── */}
-      <AnimatePresence>
-        {showReputationAnalysis && businessData && ownershipVerified && (
-          <ReputationAnalysis
-            businessData={{ businessName: businessData.businessName, rating: businessData.rating || 0, totalReviews: businessData.totalReviews, reviews: businessData.reviews || [], address: businessData.address, phone: businessData.phone || undefined, category: businessData.category, logoUrl: businessData.logoUrl || undefined, openingHours: businessData.openingHours || undefined }}
-            onContinue={() => { setShowReputationAnalysis(false); onNext() }}
-            onBack={() => setShowReputationAnalysis(false)}
-          />
         )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {showSuccessModal && businessData && ownershipVerified && (
-          <VerificationSuccess
-            businessData={{ businessName: businessData.businessName, address: businessData.address, phone: businessData.phone, website: businessData.website, category: businessData.category, rating: businessData.rating, totalReviews: businessData.totalReviews, logoUrl: businessData.logoUrl, lat: businessData.lat, lng: businessData.lng, openingHours: businessData.openingHours }}
-            onContinue={() => { setShowSuccessModal(false); if (businessData.rating && businessData.totalReviews > 0) setShowReputationAnalysis(true); else onNext() }}
-          />
-        )}
-      </AnimatePresence>
+      </div>
+
     </motion.div>
   )
 }

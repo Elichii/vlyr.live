@@ -14,8 +14,6 @@ function GoogleOAuthSuccessContent() {
   const managedBusinesses = searchParams.get("managedBusinesses")
   const debugInfo = searchParams.get("debugInfo")
   const businessCount = searchParams.get("businessCount")
-  const accessToken = searchParams.get("accessToken")
-  const refreshToken = searchParams.get("refreshToken")
 
   useEffect(() => {
     // Use localStorage as a bridge to communicate with parent window
@@ -28,8 +26,6 @@ function GoogleOAuthSuccessContent() {
         managedBusinesses: managedBusinesses || "[]",
         debugInfo: debugInfo || "{}",
         businessCount: businessCount || "0",
-        accessToken: accessToken || null,
-        refreshToken: refreshToken || null,
         timestamp: Date.now()
       }
       localStorage.setItem("google-oauth-result", JSON.stringify(data))
@@ -54,15 +50,13 @@ function GoogleOAuthSuccessContent() {
             managedBusinesses: managedBusinesses || "[]",
             debugInfo: debugInfo || "{}",
             businessCount: businessCount || "0",
-            accessToken: accessToken || null,
-            refreshToken: refreshToken || null
-          }, "*")
+          }, window.location.origin) // only our own page may receive this
         } else {
           window.opener.postMessage({
             type: "google-oauth-error",
             error: error || "Authentication failed",
             debugInfo: debugInfo || "{}"
-          }, "*")
+          }, window.location.origin)
         }
       } catch {
         // COOP blocked, localStorage will be used instead
@@ -77,7 +71,7 @@ function GoogleOAuthSuccessContent() {
         // Window might not close due to COOP, show message
       }
     }, 1500)
-  }, [success, email, name, error, managedBusinesses, debugInfo, businessCount, accessToken, refreshToken])
+  }, [success, email, name, error, managedBusinesses, debugInfo, businessCount])
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

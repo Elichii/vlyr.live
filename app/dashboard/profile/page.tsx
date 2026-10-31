@@ -51,6 +51,9 @@ const PLATFORM_OPTIONS = [
   { value: "custom", label: "Custom URL", icon: "#", color: "#FFE100" },
 ]
 
+/** Keep only characters that belong in a phone number. */
+const onlyPhoneChars = (v: string) => v.replace(/[^\d+()\-\s.]/g, "").slice(0, 25)
+
 // ── Fetchers ────────────────────────────────────────────────────────
 async function fetchProfile() {
   const supabase = createClient()
@@ -85,6 +88,10 @@ export default function ProfilePage() {
   const [lat, setLat] = useState<number | null>(null)
   const [lng, setLng] = useState<number | null>(null)
   const [logoUrl, setLogoUrl] = useState("")
+  const [businessPhone, setBusinessPhone] = useState("")
+  const [website, setWebsite] = useState("")
+  const [googleSync, setGoogleSync] = useState<"idle" | "syncing" | "done" | "error">("idle")
+  const autoSynced = useRef(false)
 
   // Review links local state
   const [links, setLinks] = useState<ReviewLink[]>([])
@@ -108,13 +115,37 @@ export default function ProfilePage() {
       setBusinessName(profile.business_name || "")
       setBusinessCategory(profile.business_category || "")
       setPhone(profile.phone || "")
-      setAddress(profile.address || "")
+      // Fall back to what Google has for the business
+      setAddress(profile.address || profile.google_address || "")
+      setBusinessPhone(profile.google_phone || "")
+      setWebsite(profile.google_website || "")
       setBio(profile.bio || "")
       setLat(profile.lat ?? null)
       setLng(profile.lng ?? null)
       setLogoUrl(profile.logo_url || "")
     }
   }, [profile])
+
+  // Pull details from Google: automatically once for verified businesses with
+  // empty fields, or on demand ("Refresh from Google" overwrites)
+  const syncFromGoogle = useCallback(async (overwrite: boolean) => {
+    setGoogleSync("syncing")
+    const res = await fetch("/api/google/sync-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overwrite }),
+    })
+    setGoogleSync(res.ok ? "done" : "error")
+    await mutate("merchant-profile")
+    await mutate("merchant-review-links")
+  }, [])
+
+  useEffect(() => {
+    if (!profile || autoSynced.current || profile.google_ownership_verified !== true) return
+    if (profile.address && profile.logo_url && profile.google_phone) return
+    autoSynced.current = true
+    syncFromGoogle(false)
+  }, [profile, syncFromGoogle])
 
   useEffect(() => {
     if (reviewLinks.length > 0) setLinks(reviewLinks)
@@ -185,6 +216,7 @@ export default function ProfilePage() {
 
       await supabase.from("merchants").update({
         google_connected: false,
+        google_ownership_verified: false,
         google_location_id: null,
         google_account_name: null,
       }).eq("id", user.id)
@@ -315,6 +347,8 @@ export default function ProfilePage() {
         business_category: businessCategory,
         phone,
         address,
+        google_phone: businessPhone || null,
+        google_website: website || null,
         bio,
         lat,
         lng,
@@ -386,16 +420,40 @@ export default function ProfilePage() {
               </label>
               <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="123 Main St, City, State" className="h-11 bg-secondary/50 border-border rounded-xl" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Category</label>
                 <Input value={businessCategory} onChange={(e) => setBusinessCategory(e.target.value)} placeholder="Restaurant, Salon..." className="h-11 bg-secondary/50 border-border rounded-xl" />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Phone</label>
-                <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="h-11 bg-secondary/50 border-border rounded-xl" />
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Business phone</label>
+                <Input value={businessPhone} onChange={(e) => setBusinessPhone(onlyPhoneChars(e.target.value))} inputMode="tel" placeholder="+1 (555) 000-0000" className="h-11 bg-secondary/50 border-border rounded-xl" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Website</label>
+                <Input value={website} onChange={(e) => setWebsite(e.target.value.trim())} placeholder="https://yourbusiness.com" className="h-11 bg-secondary/50 border-border rounded-xl" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Your mobile (for alerts, not public)</label>
+                <Input value={phone} onChange={(e) => setPhone(onlyPhoneChars(e.target.value))} inputMode="tel" placeholder="+1 (555) 000-0000" className="h-11 bg-secondary/50 border-border rounded-xl" />
               </div>
             </div>
+            {profile?.google_ownership_verified && (
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  disabled={googleSync === "syncing"}
+                  onClick={() => {
+                    if (window.confirm("Replace these details with the latest from your Google Business Profile?")) syncFromGoogle(true)
+                  }}
+                  className="text-xs font-medium text-[#A68B00] hover:underline underline-offset-4 disabled:opacity-50"
+                >
+                  {googleSync === "syncing" ? "Loading from Google..." : "Refresh from Google"}
+                </button>
+                {googleSync === "done" && <span className="text-xs text-green-600">Updated from Google</span>}
+                {googleSync === "error" && <span className="text-xs text-red-500">Couldn&apos;t load from Google right now</span>}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -445,8 +503,9 @@ export default function ProfilePage() {
 
       {/* ── Google Business Identity Bridge Card ──────────────────── */}
       <GoogleBusinessCard
-        isConnected={profile?.google_connected ?? false}
-        accountName={profile?.google_account_name}
+        // "Verified Owner" only when Google confirmed ownership (signing in alone isn't proof)
+        isConnected={profile?.google_ownership_verified === true}
+        accountName={profile?.business_name || profile?.google_account_name}
         locationId={profile?.google_location_id}
         businessName={businessName}
         onConnect={() => mutate("merchant-profile")}

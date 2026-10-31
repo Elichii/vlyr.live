@@ -139,15 +139,23 @@ export default function AnalyticsPage() {
     ]
   }, [reviews])
 
-  // Mock trend data (in real app, this would come from historical data)
+  // Real data only: average rating per month from the reviews Google shares
+  // (Google returns a business's most recent reviews, not its full history)
   const trendData = useMemo(() => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
-    return months.map((month, i) => ({
-      month,
-      rating: Math.min(5, Math.max(1, currentRating - 0.3 + (i * 0.1) + (Math.random() * 0.2 - 0.1))).toFixed(1),
-      reviews: Math.floor(Math.random() * 10 + 5),
-    }))
-  }, [currentRating])
+    const byMonth = new Map<string, { label: string; sum: number; n: number; t: number }>()
+    for (const r of reviews ?? []) {
+      if (!r.time || !r.rating) continue
+      const d = new Date(r.time * 1000)
+      const key = `${d.getFullYear()}-${d.getMonth()}`
+      const v = byMonth.get(key) ?? { label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), sum: 0, n: 0, t: d.getTime() }
+      v.sum += r.rating
+      v.n++
+      byMonth.set(key, v)
+    }
+    return [...byMonth.values()]
+      .sort((a, b) => a.t - b.t)
+      .map((v) => ({ month: v.label, rating: Number((v.sum / v.n).toFixed(1)), reviews: v.n }))
+  }, [reviews])
 
   // Rating improvement targets
   const improvementTargets = useMemo(() => {
@@ -306,8 +314,13 @@ export default function AnalyticsPage() {
         <motion.div variants={item} className="bg-card rounded-2xl border border-border p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-foreground">Rating Trend</h3>
-            <span className="text-xs text-muted-foreground">Last 6 months</span>
+            <span className="text-xs text-muted-foreground">From your latest Google reviews</span>
           </div>
+          {trendData.length < 2 && (
+            <p className="text-xs text-muted-foreground mb-3">
+              Google only shares a business&apos;s most recent reviews, so the trend fills in over time.
+            </p>
+          )}
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trendData}>

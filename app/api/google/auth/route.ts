@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { SIGNUP_NONCE_COOKIE, encodeSignupState } from "@/lib/google-signup"
+import { publicOrigin } from "@/lib/public-origin"
 
 /**
  * GET /api/google/auth
@@ -23,10 +25,24 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
   const isRedirectMode = searchParams.get("redirect") === "true"
-  const state = isRedirectMode ? `redirect_${Date.now()}` : (searchParams.get("state") || `profile_${Date.now()}`)
-  
+  const isSignup = searchParams.get("mode") === "signup"
+
+  // Sign up / sign in with Google: remember the chosen plan and invite code,
+  // plus a one-time nonce (also stored in a cookie) that the callback checks.
+  const nonce = crypto.randomUUID()
+  const state = isSignup
+    ? encodeSignupState({
+        plan: searchParams.get("plan") || "free",
+        cycle: searchParams.get("cycle") === "annual" ? "annual" : "monthly",
+        ref: (searchParams.get("ref") || "").slice(0, 64),
+        nonce,
+      })
+    : isRedirectMode
+      ? `redirect_${Date.now()}`
+      : (searchParams.get("state") || `profile_${Date.now()}`)
+
   // Derive base URL from the incoming request so this works on localhost AND production
-  const origin = new URL(request.url).origin
+  const origin = publicOrigin(request)
   const redirectUri = `${origin}/api/google/callback`
 
   // Scopes for Google Sign-In + Business Profile API
@@ -48,5 +64,15 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set("prompt", "consent")
   authUrl.searchParams.set("state", state)
 
-  return NextResponse.redirect(authUrl.toString())
+  const response = NextResponse.redirect(authUrl.toString())
+  if (isSignup) {
+    response.cookies.set(SIGNUP_NONCE_COOKIE, nonce, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: origin.startsWith("https://"),
+      path: "/api/google",
+      maxAge: 60 * 15,
+    })
+  }
+  return response
 }

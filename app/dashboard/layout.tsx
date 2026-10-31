@@ -14,6 +14,9 @@ import {
   ShieldCheck,
   Menu,
   TrendingUp,
+  MessageSquareWarning,
+  Gift,
+  MapPin,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,6 +30,9 @@ import { createClient } from "@/lib/supabase/client"
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: BarChart3 },
+  { href: "/dashboard/feedback", label: "Feedback", icon: MessageSquareWarning },
+  { href: "/dashboard/stickers", label: "Sticker Map", icon: MapPin },
+  { href: "/dashboard/rewards", label: "Rewards", icon: Gift },
   { href: "/dashboard/analytics", label: "Review Analytics", icon: TrendingUp },
   { href: "/dashboard/orders", label: "Order History", icon: ClipboardList },
   { href: "/dashboard/profile", label: "Business Profile", icon: Building2 },
@@ -56,10 +62,18 @@ export default function DashboardLayout({
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const { data: merchant, isLoading: merchantLoading } = useSWR("merchant-sidebar", fetchMerchant)
+  // New ratings since the manager last opened Customer Feedback
+  const { data: unseen } = useSWR<{ good: number; bad: number }>(
+    "feedback-unseen",
+    () => fetch("/api/activity/unseen").then((r) => r.json()),
+    { refreshInterval: 30000 },
+  )
 
   const displayName = merchant?.business_name || "My Business"
   const planLabel =
-    merchant?.package_id === "enterprise"
+    merchant?.package_id === "free"
+      ? "Free Trial · Upgrade"
+      : merchant?.package_id === "enterprise"
       ? "Enterprise"
       : merchant?.package_id === "starter"
         ? "Starter Plan"
@@ -98,7 +112,27 @@ export default function DashboardLayout({
             }`}
           >
             <Icon size={18} />
-            {label}
+            <span className="flex-1 text-left">{label}</span>
+            {href === "/dashboard/feedback" && (
+              <span className="flex items-center gap-1">
+                {!!unseen?.good && (
+                  <span
+                    className="min-w-5 h-5 px-1.5 rounded-full bg-green-500 text-white text-[11px] font-bold flex items-center justify-center"
+                    title={`${unseen.good} new happy rating${unseen.good === 1 ? "" : "s"}`}
+                  >
+                    {unseen.good}
+                  </span>
+                )}
+                {!!unseen?.bad && (
+                  <span
+                    className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center"
+                    title={`${unseen.bad} new unhappy rating${unseen.bad === 1 ? "" : "s"}`}
+                  >
+                    {unseen.bad}
+                  </span>
+                )}
+              </span>
+            )}
           </button>
         )
       })}
@@ -119,7 +153,11 @@ export default function DashboardLayout({
         ) : (
           <>
             <span className="text-xs font-semibold text-[#FFFFFF] truncate">{displayName}</span>
-            <span className="text-[10px] text-[#FFE100] font-medium">{planLabel}</span>
+            {merchant?.package_id === "free" ? (
+              <a href="/dashboard/upgrade" className="text-[10px] text-[#FFE100] font-medium hover:underline">{planLabel}</a>
+            ) : (
+              <span className="text-[10px] text-[#FFE100] font-medium">{planLabel}</span>
+            )}
           </>
         )}
       </div>

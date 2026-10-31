@@ -1,5 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { publicOrigin } from "@/lib/public-origin"
+import {
+  CUSTOMER_NONCE_COOKIE,
+  decodeCustomerState,
+  setCustomerCookie,
+} from "@/lib/customer-session"
+import {
+  SIGNUP_NONCE_COOKIE,
+  createLoginTokenHash,
+  decodeSignupState,
+  findOrCreateGoogleMerchant,
+  type GoogleMerchant,
+} from "@/lib/google-signup"
 
 /**
  * Google OAuth Callback Handler
@@ -45,7 +59,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get("error")
 
   // Derive base URL from the incoming request so this works on localhost AND production
-  const baseUrl = new URL(request.url).origin
+  const baseUrl = publicOrigin(request)
 
   // Initialize debug info
   const debugInfo: DebugInfo = {
@@ -69,9 +83,72 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(errorUrl.toString())
   }
 
+  // Customer who scanned a sticker signing in (state from /api/customer/google).
+  // Handled separately: basic profile only, no merchant account.
+  const customerState = decodeCustomerState(state)
+  if (customerState) {
+    const back = (params: Record<string, string> = {}) => {
+      const url = new URL("/pulse", baseUrl)
+      url.searchParams.set("c", customerState.code)
+      for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+      const res = NextResponse.redirect(url)
+      res.cookies.delete({ name: CUSTOMER_NONCE_COOKIE, path: "/api/google" })
+      return res
+    }
+    if (error || !code) return back({ error: error === "access_denied" ? "sign_in_cancelled" : "sign_in_failed" })
+    if (request.cookies.get(CUSTOMER_NONCE_COOKIE)?.value !== customerState.nonce) return back({ error: "sign_in_expired" })
+    try {
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id: GOOGLE_CLIENT_ID!,
+          client_secret: GOOGLE_CLIENT_SECRET!,
+          redirect_uri: `${baseUrl}/api/google/callback`,
+          grant_type: "authorization_code",
+        }),
+      })
+      if (!tokenRes.ok) throw new Error(await tokenRes.text())
+      const { access_token } = await tokenRes.json()
+      const profileRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${access_token}` },
+      })
+      if (!profileRes.ok) throw new Error("profile")
+      const profile = await profileRes.json()
+      if (!profile.email || profile.verified_email === false) return back({ error: "email_not_verified" })
+      const res = back()
+      setCustomerCookie(res, { email: String(profile.email).toLowerCase(), name: profile.name || "", sub: String(profile.id || "") }, baseUrl.startsWith("https://"))
+      return res
+    } catch (e) {
+      console.error("[customer-signin] failed:", e)
+      return back({ error: "sign_in_failed" })
+    }
+  }
+
+  // Sign up / sign in with Google (state was created by /api/google/auth?mode=signup)
+  const signup = decodeSignupState(state)
+  const signupError = (msg: string) => {
+    const url = new URL("/onboarding", baseUrl)
+    url.searchParams.set("plan", signup?.plan ?? "free")
+    url.searchParams.set("cycle", signup?.cycle ?? "monthly")
+    url.searchParams.set("google_error", msg)
+    const res = NextResponse.redirect(url)
+    res.cookies.delete({ name: SIGNUP_NONCE_COOKIE, path: "/api/google" })
+    return res
+  }
+
   if (error) {
     debugInfo.errors.push(`OAuth error: ${error}`)
+    if (signup) return signupError(error === "access_denied" ? "Google_sign_in_was_cancelled" : error)
     return errorRedirect(error)
+  }
+
+  if (signup) {
+    const cookieNonce = request.cookies.get(SIGNUP_NONCE_COOKIE)?.value
+    if (!cookieNonce || cookieNonce !== signup.nonce) {
+      return signupError("Sign_in_link_expired_Please_try_again")
+    }
   }
 
   if (!code) {
@@ -339,10 +416,37 @@ export async function GET(request: NextRequest) {
 
     debugInfo.totalLocationsFound = managedBusinesses.length
 
+    // Sign up / sign in with Google: find or create the merchant and log them in
+    const supabase = await createClient()
+    let signupMerchant: GoogleMerchant | null = null
+    if (signup) {
+      if (!googleEmail || profile.verified_email === false) {
+        return signupError("Your_Google_email_is_not_verified")
+      }
+      try {
+        signupMerchant = await findOrCreateGoogleMerchant({
+          email: googleEmail,
+          name: googleName,
+          plan: signup.plan,
+          cycle: signup.cycle,
+          ref: signup.ref,
+        })
+        const tokenHash = await createLoginTokenHash(signupMerchant.email)
+        const { error: otpError } = await supabase.auth.verifyOtp({ type: "magiclink", token_hash: tokenHash })
+        if (otpError) throw new Error(otpError.message)
+      } catch (e) {
+        console.error("[google-signup] failed:", e)
+        return signupError("Could_not_sign_you_in_Please_try_again")
+      }
+    }
+
     // Try to get current user and store data, but don't fail if not authenticated
     // The popup window may not have access to the same session cookies
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user: sessionUser } } = await supabase.auth.getUser()
+    const user = signupMerchant ? { id: signupMerchant.userId } : sessionUser
+    // Server-side write: Google tokens and the managed-business list are
+    // protected fields the browser can't set (the user id comes from the session above)
+    const db = createAdminClient()
 
     if (user) {
       // Store Google account info, tokens, managed businesses, and debug info
@@ -362,11 +466,27 @@ export async function GET(request: NextRequest) {
         console.log("[v0] Storing new refresh_token for user:", user.id)
       }
       
-      await supabase.from("merchants").update(updateData).eq("id", user.id)
+      if (signupMerchant) updateData.google_connected = true
+      await db.from("merchants").update(updateData).eq("id", user.id)
     } else {
       // User not authenticated in popup - that's okay, we'll pass data via URL params
       // The parent window will handle storing the data
       console.log("[v0] No Supabase user in popup - will pass data to parent window")
+    }
+
+    if (signupMerchant) {
+      const next = signupMerchant.onboarded
+        ? new URL("/dashboard", baseUrl)
+        : new URL("/onboarding", baseUrl)
+      if (!signupMerchant.onboarded) {
+        next.searchParams.set("plan", signup!.plan)
+        next.searchParams.set("cycle", signup!.cycle)
+        next.searchParams.set("step", "google-connect")
+        next.searchParams.set("oauth_complete", "true")
+      }
+      const res = NextResponse.redirect(next)
+      res.cookies.delete({ name: SIGNUP_NONCE_COOKIE, path: "/api/google" })
+      return res
     }
 
     // Check if this is redirect mode (state starts with "redirect_")
@@ -397,10 +517,8 @@ export async function GET(request: NextRequest) {
     successUrl.searchParams.set("businessCount", String(managedBusinesses.length))
     successUrl.searchParams.set("managedBusinesses", JSON.stringify(managedBusinesses))
     successUrl.searchParams.set("debugInfo", JSON.stringify(debugInfo))
-    successUrl.searchParams.set("accessToken", access_token)
-    if (refresh_token) {
-      successUrl.searchParams.set("refreshToken", refresh_token)
-    }
+    // Google tokens are stored server-side above and never put in a URL
+    // (URLs end up in browser history and logs)
 
     return NextResponse.redirect(successUrl.toString())
 

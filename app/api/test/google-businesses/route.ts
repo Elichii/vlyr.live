@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/server"
  * Visit: /api/test/google-businesses
  */
 export async function GET() {
+  // Developer diagnostic: not available on the live site
+  if (process.env.NODE_ENV !== "development") return NextResponse.json({ error: "Not found" }, { status: 404 })
   const supabase = await createClient()
   
   // Get current user

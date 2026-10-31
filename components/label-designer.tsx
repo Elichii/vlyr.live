@@ -11,6 +11,9 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import type { LabelDesign } from "@/lib/label-types"
 
+// Keep in sync with lib/label-sheet.ts (the PDF uses the same line)
+const DEFAULT_TAGLINE = "Scan to rate & review us"
+
 // ─── Config ───────────────────────────────────────────────────────────
 const LABEL_SIZES = [
   { id: "2inch" as const, label: '2"', desc: "Standard", px: 180 },
@@ -43,6 +46,8 @@ interface LabelDesignerProps {
   reviewUrl?: string
   onDesignChange?: (design: LabelDesign) => void
   compact?: boolean
+  /** Replaces the note under the preview that explains what the QR code links to */
+  qrNote?: React.ReactNode
 }
 
 export function LabelDesigner({
@@ -51,6 +56,7 @@ export function LabelDesigner({
   reviewUrl = "",
   onDesignChange,
   compact = false,
+  qrNote,
 }: LabelDesignerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const qrImageRef = useRef<HTMLImageElement | null>(null)
@@ -62,10 +68,33 @@ export function LabelDesigner({
     borderColor: "#FFE100",
     logoUrl: initialLogoUrl,
     businessName: initialBusinessName,
-    tagline: "Scan for a special offer",
+    tagline: DEFAULT_TAGLINE,
     labelSize: "3inch",
     shape: "rounded-rect",
   })
+
+  // The real business name often arrives after the first render: replace the
+  // placeholder with it (but never overwrite a name the merchant typed)
+  useEffect(() => {
+    const real = initialBusinessName?.trim()
+    if (!real || real.toLowerCase() === "your business") return
+    setDesign((prev) =>
+      !prev.businessName.trim() || prev.businessName.trim().toLowerCase() === "your business"
+        ? { ...prev, businessName: real }
+        : prev,
+    )
+  }, [initialBusinessName])
+
+  // VLYR mark shown in the middle of the QR code (same as the printed sticker)
+  const iconRef = useRef<HTMLImageElement | null>(null)
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      iconRef.current = img
+      setDesign((prev) => ({ ...prev }))
+    }
+    img.src = "/images/vlyr-wordmark.png"
+  }, [])
 
   const updateDesign = useCallback((updates: Partial<LabelDesign>) => {
     setDesign((prev) => ({ ...prev, ...updates }))
@@ -82,7 +111,7 @@ export function LabelDesigner({
       width: 400,
       margin: 1,
       color: { dark: "#000000", light: "#FFFFFF" },
-      errorCorrectionLevel: "M",
+      errorCorrectionLevel: "H",
     }).then((dataUrl) => {
       const img = new Image()
       img.crossOrigin = "anonymous"
@@ -163,18 +192,34 @@ export function LabelDesigner({
     if (qrImageRef.current) {
       // Draw the real QR code image
       ctx.drawImage(qrImageRef.current, qrX + 2, qrY + 2, qrSize - 4, qrSize - 4)
+      if (iconRef.current) {
+        // Same proportions as the printed sticker
+        const bw = (qrSize - 4) * 0.32
+        const bh = (qrSize - 4) * 0.15
+        const bx = qrX + qrSize / 2 - bw / 2
+        const by = qrY + qrSize / 2 - bh / 2
+        ctx.fillStyle = "#FFFFFF"
+        ctx.beginPath()
+        ctx.roundRect(bx, by, bw, bh, bh * 0.18)
+        ctx.fill()
+        const pad = bh * 0.12
+        const aspect = iconRef.current.width / iconRef.current.height
+        let iw = bw - pad * 2
+        let ih = iw / aspect
+        if (ih > bh - pad * 2) { ih = bh - pad * 2; iw = ih * aspect }
+        ctx.drawImage(iconRef.current, bx + (bw - iw) / 2, by + (bh - ih) / 2, iw, ih)
+      }
     } else {
       // Fallback: draw a placeholder pattern
       drawQRPattern(ctx, qrX + 4, qrY + 4, qrSize - 8, design.businessName)
     }
 
     // Tagline
+    // Bold call to action, like the printed sticker
     ctx.fillStyle = textColor
-    ctx.globalAlpha = 0.6
-    ctx.font = `${Math.max(8, px * 0.04)}px 'Inter', sans-serif`
+    ctx.font = `bold ${Math.max(9, px * 0.05)}px 'Inter', sans-serif`
     ctx.textAlign = "center"
-    ctx.fillText(design.tagline, padding + px / 2, padding + px * 0.88)
-    ctx.globalAlpha = 1
+    ctx.fillText(design.tagline || DEFAULT_TAGLINE, padding + px / 2, padding + px * 0.87, px * 0.84)
 
     // Footer
     ctx.fillStyle = accentColor
@@ -294,7 +339,7 @@ export function LabelDesigner({
               <Download size={12} /> Export PNG
             </Button>
             <Button type="button" variant="ghost" size="sm" onClick={() => updateDesign({
-              backgroundColor: "#0A0A0A", borderColor: "#FFE100", tagline: "Scan for a special offer",
+              backgroundColor: "#0A0A0A", borderColor: "#FFE100", tagline: DEFAULT_TAGLINE,
               labelSize: "3inch", shape: "rounded-rect",
             })} className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-7">
               <RotateCcw size={12} /> Reset
@@ -423,7 +468,9 @@ export function LabelDesigner({
       <div className="bg-[#FFE100]/5 border border-[#FFE100]/10 rounded-xl p-3 flex items-start gap-2.5">
         <QrCode size={14} className="text-[#FFE100] mt-0.5 shrink-0" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          {reviewUrl ? (
+          {qrNote ? (
+            qrNote
+          ) : reviewUrl ? (
             <>
               The QR code encodes your primary review link: <span className="text-foreground font-medium break-all">{reviewUrl}</span>.
               Customers scan it to leave a review on your preferred platform.

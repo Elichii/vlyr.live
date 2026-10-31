@@ -4,8 +4,8 @@ import { useCallback, useState } from "react"
 import { motion } from "framer-motion"
 import { ArrowRight, ArrowLeft, QrCode } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { LabelDesigner } from "@/components/label-designer"
-import type { OnboardingData } from "@/lib/onboarding-types"
+import { StickerDesigner } from "@/components/sticker-designer"
+import { isFreePlan, type OnboardingData } from "@/lib/onboarding-types"
 import type { LabelDesign } from "@/lib/label-types"
 
 interface StepPrintStudioProps {
@@ -47,16 +47,16 @@ export function StepPrintStudio({ data, onChange, onNext, onBack }: StepPrintStu
           </h2>
         </div>
         <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-          Design your VLYR authentication labels. Each sticker contains a unique
-          QR code that links to your verification page.
+          Design your review stickers. Each one gets its own QR code that takes
+          customers to your feedback page.
         </p>
       </div>
 
       {/* Reusable Label Designer */}
-      <LabelDesigner
-        initialBusinessName={data.businessName || "Your Business"}
+      <StickerDesigner
+        initialBusinessName={data.businessName || ""}
         initialLogoUrl={data.logoUrl ?? null}
-        reviewUrl={data.googlePlaceId || ""}
+        locked={isFreePlan(data.packageId)}
         onDesignChange={handleDesignChange}
       />
 

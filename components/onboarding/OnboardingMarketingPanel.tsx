@@ -4,7 +4,16 @@ import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Star, Shield, TrendingUp, BarChart3, Zap, CheckCircle2, ThumbsUp, QrCode, Bell } from "lucide-react"
 
-interface Props { isVerified?: boolean; businessRating?: number; totalReviews?: number; businessName?: string }
+interface ReviewSnap { author: string; rating: number; text: string; relativeTime: string }
+interface Props {
+  isVerified?: boolean
+  businessRating?: number
+  totalReviews?: number
+  businessName?: string
+  businessAddress?: string
+  reviews?: ReviewSnap[] | null
+  googleConnected?: boolean
+}
 const Y = "#FFE100"; const DK = "#0A0A0A"
 
 function VLogo({ h = 22 }: { h?: number }) {
@@ -16,13 +25,15 @@ function Stars({ n, size = 16, animated = false }: { n: number; size?: number; a
   useEffect(() => {
     if (!animated) return
     setShown(0); let i = 0
-    const id = setInterval(() => { i++; setShown(i); if (i >= n) clearInterval(id) }, 200)
+    const id = setInterval(() => { i++; setShown(i); if (i >= n) clearInterval(id) }, 180)
     return () => clearInterval(id)
   }, [n, animated])
   return (
-    <div style={{ display:"flex", gap:4 }}>
+    <div style={{ display:"flex", gap:5 }}>
       {[1,2,3,4,5].map(i => (
-        <motion.span key={i} animate={animated&&i===shown?{scale:[1,1.6,1]}:{}} transition={{duration:0.25}}>
+        <motion.span key={i}
+          animate={animated && i === shown ? { scale:[0, 1.45, 0.88, 1], rotate:[-8, 4, 0] } : {}}
+          transition={{ duration: 0.38, ease: [0.34, 1.56, 0.64, 1] }}>
           <Star size={size} style={{ fill: i<=shown?Y:"#2A2A2A", color: i<=shown?Y:"#2A2A2A" }} />
         </motion.span>
       ))}
@@ -69,25 +80,42 @@ function IPhone({ children, w = 270 }: { children: React.ReactNode; w?: number }
 // Phone screens
 function ScanScreen() {
   return (
-    <div style={{width:"100%",height:"100%",background:"#000",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:20}}>
-      <div style={{position:"absolute",top:52,left:0,right:0,display:"flex",justifyContent:"space-between",padding:"0 24px",color:"white",fontSize:13,fontWeight:600}}>
-        <span>9:41</span><span style={{fontSize:11,display:"flex",gap:5}}>▲▲▲ WiFi 🔋</span>
+    <div style={{width:"100%",height:"100%",background:"#111",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18}}>
+      {/* Status bar */}
+      <div style={{position:"absolute",top:52,left:0,right:0,display:"flex",justifyContent:"space-between",padding:"0 22px",color:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:600}}>
+        <span>9:41</span><span style={{fontSize:11}}>WiFi ●●●</span>
       </div>
-      <p style={{color:"rgba(255,255,255,0.3)",fontSize:12,letterSpacing:3,textTransform:"uppercase"}}>Camera</p>
-      <div style={{position:"relative",width:140,height:140}}>
-        {[{t:0,l:0,cls:"tl"},{t:0,r:0,cls:"tr"},{b:0,l:0,cls:"bl"},{b:0,r:0,cls:"br"}].map(({cls,...p},i)=>(
-          <div key={i} style={{position:"absolute",width:30,height:30,...p as any,
-            borderTop:cls.startsWith("t")?`3px solid ${Y}`:undefined,
-            borderBottom:cls.startsWith("b")?`3px solid ${Y}`:undefined,
-            borderLeft:cls.endsWith("l")?`3px solid ${Y}`:undefined,
-            borderRight:cls.endsWith("r")?`3px solid ${Y}`:undefined,
-            borderTopLeftRadius:cls==="tl"?6:0,borderTopRightRadius:cls==="tr"?6:0,
-            borderBottomLeftRadius:cls==="bl"?6:0,borderBottomRightRadius:cls==="br"?6:0}}/>
+      <p style={{color:"rgba(255,255,255,0.35)",fontSize:11,letterSpacing:3,textTransform:"uppercase",fontWeight:600}}>Camera</p>
+
+      {/* Viewfinder — white QR visible inside */}
+      <div style={{position:"relative",width:148,height:148}}>
+        {/* Dim overlay outside the QR area so QR pops */}
+        <div style={{position:"absolute",inset:12,background:"rgba(255,255,255,0.06)",borderRadius:4}}/>
+        {/* The actual QR code — white bg, visible */}
+        <div style={{position:"absolute",inset:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <QRSvg size={112}/>
+        </div>
+        {/* Corner brackets — yellow, sharp */}
+        {([["tl",0,0],["tr",0,"auto"],["bl","auto",0],["br","auto","auto"]] as const).map(([cls,t,r],i)=>(
+          <div key={i} style={{position:"absolute",width:28,height:28,
+            top:typeof t==="number"?t:undefined,bottom:t==="auto"?0:undefined,
+            left:typeof r==="number"?r:undefined,right:r==="auto"?0:undefined,
+            borderTop:(cls==="tl"||cls==="tr")?`3px solid ${Y}`:undefined,
+            borderBottom:(cls==="bl"||cls==="br")?`3px solid ${Y}`:undefined,
+            borderLeft:(cls==="tl"||cls==="bl")?`3px solid ${Y}`:undefined,
+            borderRight:(cls==="tr"||cls==="br")?`3px solid ${Y}`:undefined,
+            borderTopLeftRadius:cls==="tl"?5:0,borderTopRightRadius:cls==="tr"?5:0,
+            borderBottomLeftRadius:cls==="bl"?5:0,borderBottomRightRadius:cls==="br"?5:0}}/>
         ))}
-        <motion.div style={{position:"absolute",left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${Y},transparent)`,opacity:0.9}}
-          animate={{top:["8%","90%","8%"]}} transition={{duration:1.8,repeat:Infinity,ease:"easeInOut"}}/>
+        {/* Crisp scan line with glow */}
+        <motion.div style={{position:"absolute",left:4,right:4,height:2,
+          background:`linear-gradient(90deg, transparent, ${Y}, ${Y}, transparent)`,
+          boxShadow:`0 0 8px 2px ${Y}80`, borderRadius:1}}
+          animate={{top:["12%","85%","12%"]}}
+          transition={{duration:1.6,repeat:Infinity,ease:"easeInOut"}}/>
       </div>
-      <p style={{color:"rgba(255,255,255,0.2)",fontSize:13}}>Align QR code in frame</p>
+
+      <p style={{color:"rgba(255,255,255,0.3)",fontSize:12,letterSpacing:0.3}}>Align QR in frame</p>
     </div>
   )
 }
@@ -98,16 +126,20 @@ function RatingScreen({ stars, name }: { stars: number; name: string }) {
       <div style={{width:"100%",display:"flex",justifyContent:"space-between",padding:"52px 24px 0",fontSize:13,fontWeight:600,color:DK}}>
         <span>9:41</span><span style={{fontSize:11}}>🔋 WiFi ▲▲▲</span>
       </div>
-      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18,padding:"0 28px 48px"}}>
-        <div style={{width:70,height:70,borderRadius:20,background:Y,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 8px 30px ${Y}50`}}>
-          <img src="/images/vlyr-logo.png" alt="VLYR" style={{height:38,width:"auto"}}/>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:20,padding:"0 28px 52px"}}>
+        {/* VLYR logo — dark container so white logo is legible */}
+        <div style={{width:66,height:66,borderRadius:18,background:DK,display:"flex",alignItems:"center",justifyContent:"center",
+          boxShadow:`0 10px 36px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.08)`}}>
+          <img src="/images/vlyr-logo-white.png" alt="VLYR" style={{height:26,width:"auto",objectFit:"contain"}}/>
         </div>
         <div style={{textAlign:"center"}}>
-          <p style={{fontWeight:800,fontSize:18,color:DK}}>Rate your experience</p>
-          <p style={{fontSize:14,color:"#888",marginTop:4}}>{name}</p>
+          <p style={{fontWeight:800,fontSize:17,color:DK,letterSpacing:"-0.01em"}}>Rate your experience</p>
+          <p style={{fontSize:13,color:"#777",marginTop:5,fontWeight:500}}>{name}</p>
         </div>
-        <Stars n={stars} size={30} animated/>
-        <p style={{fontSize:13,color:"#AAA",textAlign:"center"}}>{stars>=4?"Tap to share on Google →":"Share privately with manager →"}</p>
+        <Stars n={stars} size={32} animated/>
+        <p style={{fontSize:12,color:"#999",textAlign:"center",letterSpacing:0.2}}>
+          {stars>=4?"Tap to share on Google →":"Share privately with manager →"}
+        </p>
       </div>
     </div>
   )
@@ -115,19 +147,27 @@ function RatingScreen({ stars, name }: { stars: number; name: string }) {
 
 function SuccessScreen({ type }: { type:"google"|"private" }) {
   return (
-    <div style={{width:"100%",height:"100%",background:type==="google"?"#fff":DK,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:22}}>
-      <motion.div initial={{scale:0}} animate={{scale:1}} transition={{type:"spring",stiffness:260,delay:0.15}}
-        style={{width:100,height:100,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
-          background:type==="google"?"#f0fdf4":`${Y}15`,border:`2px solid ${type==="google"?"#bbf7d0":`${Y}40`}`,
-          boxShadow:type==="google"?"0 0 40px rgba(0,200,80,0.2)":`0 0 40px ${Y}20`}}>
+    <div style={{width:"100%",height:"100%",background:type==="google"?"#fff":DK,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:24}}>
+      <motion.div
+        initial={{scale:0,rotate:-12}}
+        animate={{scale:1,rotate:0}}
+        transition={{type:"spring",stiffness:320,damping:18,delay:0.1}}
+        style={{width:96,height:96,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+          background:type==="google"?`${Y}18`:`${Y}15`,
+          border:`2px solid ${Y}50`,
+          boxShadow:`0 0 48px ${Y}25`}}>
         {type==="google"
-          ?<svg width="46" height="46" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-          :<Shield size={46} style={{color:Y}}/>}
+          ?<svg width="44" height="44" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+          :<Shield size={44} style={{color:Y}}/>}
       </motion.div>
-      <div style={{textAlign:"center"}}>
-        <p style={{fontWeight:800,fontSize:18,color:type==="google"?"#166534":Y}}>{type==="google"?"⭐ Posted to Google!":"Captured Privately"}</p>
-        <p style={{fontSize:14,color:type==="google"?"#16a34a":"#666",marginTop:6}}>{type==="google"?"Your rating just improved":"Not posted to Google"}</p>
-      </div>
+      <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{delay:0.28}} style={{textAlign:"center"}}>
+        <p style={{fontWeight:800,fontSize:17,color:type==="google"?DK:Y,letterSpacing:"-0.01em"}}>
+          {type==="google"?"Posted to Google":"Captured Privately"}
+        </p>
+        <p style={{fontSize:13,color:type==="google"?"#777":"#666",marginTop:6}}>
+          {type==="google"?"Your rating just got stronger":"Never reaches Google"}
+        </p>
+      </motion.div>
     </div>
   )
 }
@@ -148,8 +188,8 @@ function AlertScreen({ stars, review }: { stars: number; review: string }) {
           <p style={{color:"#888",fontSize:13,marginTop:10,lineHeight:1.5}}>"{review}"</p>
         </motion.div>
         <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.8}}
-          style={{background:"#0f1a0a",border:"1px solid #00c75830",borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
-          <CheckCircle2 size={13} style={{color:"#00c758"}}/><span style={{color:"#00c758",fontSize:13}}>Not posted to Google</span>
+          style={{background:`${Y}0D`,border:`1px solid ${Y}25`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
+          <CheckCircle2 size={13} style={{color:Y}}/><span style={{color:Y,fontSize:13,fontWeight:600}}>Not posted to Google</span>
         </motion.div>
       </div>
     </div>
@@ -170,8 +210,8 @@ function ReplyScreen() {
         <div style={{alignSelf:"flex-end",maxWidth:"85%",background:"#333",borderRadius:"18px 18px 4px 18px",padding:"12px 16px",fontSize:13,lineHeight:1.5,color:"white"}}>
           {t}<motion.span animate={{opacity:[1,0,1]}} transition={{duration:0.8,repeat:Infinity}}>|</motion.span>
         </div>
-        {t.length>50&&<motion.div initial={{opacity:0,scale:0.9}} animate={{opacity:1,scale:1}} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:"#00c758"}}>
-          <CheckCircle2 size={13}/> Issue resolved ✓
+        {t.length>50&&<motion.div initial={{opacity:0,scale:0.9}} animate={{opacity:1,scale:1}} transition={{type:"spring",stiffness:300,damping:18}} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:Y,fontWeight:600}}>
+          <CheckCircle2 size={13} style={{color:Y}}/> Issue resolved ✓
         </motion.div>}
       </div>
     </div>
@@ -221,7 +261,7 @@ function S1Pizza({ paused }: { paused:boolean }) {
           </div>
         </motion.div>
         <AnimatePresence>
-          {s>=1&&<motion.div initial={{y:-60,rotate:-20,opacity:0}} animate={{y:0,rotate:-8,opacity:1}} exit={{opacity:0}} transition={{duration:0.9,type:"spring",stiffness:100}}>
+          {s>=1&&<motion.div initial={{y:-80,rotate:-24,opacity:0,scale:0.88}} animate={{y:0,rotate:-7,opacity:1,scale:1}} exit={{opacity:0,scale:0.92}} transition={{type:"spring",stiffness:120,damping:14}}>
             <IPhone w={255}>{s===1?<ScanScreen/>:s===2?<RatingScreen stars={5} name="Presto Artisan Pizza"/>:<SuccessScreen type="google"/>}</IPhone>
           </motion.div>}
         </AnimatePresence>
@@ -256,7 +296,7 @@ function S2Table({ paused }: { paused:boolean }) {
           </div>
         </motion.div>
         <AnimatePresence>
-          {s>=1&&<motion.div initial={{y:-50,rotate:14,opacity:0}} animate={{y:0,rotate:7,opacity:1}} exit={{opacity:0}} transition={{duration:0.9,type:"spring",stiffness:100}}>
+          {s>=1&&<motion.div initial={{y:-80,rotate:20,opacity:0,scale:0.88}} animate={{y:0,rotate:6,opacity:1,scale:1}} exit={{opacity:0,scale:0.92}} transition={{type:"spring",stiffness:120,damping:14}}>
             <IPhone w={255}>{s===1?<ScanScreen/>:s===2?<RatingScreen stars={2} name="The Oak Restaurant"/>:<SuccessScreen type="private"/>}</IPhone>
           </motion.div>}
         </AnimatePresence>
@@ -298,7 +338,7 @@ function S3BadReview({ paused }: { paused:boolean }) {
               </div>
               <p style={{color:Y,fontSize:13}}>1★ from Jason M.</p>
               <p style={{color:"#666",fontSize:12,marginTop:4,lineHeight:1.5}}>"Food was cold..."</p>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8,color:"#00c758",fontSize:12}}><Shield size={11}/> Captured privately</div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8,color:Y,fontSize:12,fontWeight:600}}><Shield size={11} style={{color:Y}}/> Captured privately</div>
             </motion.div>}
           </motion.div>}
         </AnimatePresence>
@@ -337,8 +377,8 @@ function S4ManagerFix({ paused }: { paused:boolean }) {
                   <div style={{alignSelf:"flex-start",maxWidth:"85%",background:"#F0F0F0",borderRadius:"4px 18px 18px 18px",padding:"12px 16px",fontSize:13,lineHeight:1.5,color:DK}}>
                     Hi Jason! Sorry about the wait. We've arranged a free meal 🍕
                   </div>
-                  {s>=3&&<motion.div initial={{scale:0}} animate={{scale:1}} transition={{type:"spring"}} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:"#00c758",alignSelf:"flex-end"}}>
-                    <ThumbsUp size={14}/> Happy customer!
+                  {s>=3&&<motion.div initial={{scale:0}} animate={{scale:1}} transition={{type:"spring",stiffness:340,damping:16}} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:Y,fontWeight:700,alignSelf:"flex-end"}}>
+                    <ThumbsUp size={14} style={{color:Y}}/> Resolved ✓
                   </motion.div>}
                 </div>
               </div>
@@ -368,12 +408,13 @@ function S5RatingUp({ paused }: { paused:boolean }) {
             <span style={{fontSize:30,color:"#2A2A2A",fontWeight:700}}>/ 5</span>
           </div>
           <Stars n={Math.round(r)} size={28}/>
-          {s>=1&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 22px",borderRadius:999,background:"#00c75814",border:"1px solid #00c75836"}}>
-            <TrendingUp size={15} style={{color:"#00c758"}}/><span style={{color:"#00c758",fontWeight:700,fontSize:14}}>+0.6 this month · 47 new reviews</span>
+          {s>=1&&<motion.div initial={{opacity:0,y:10,scale:0.92}} animate={{opacity:1,y:0,scale:1}} transition={{type:"spring",stiffness:280,damping:20}}
+            style={{display:"flex",alignItems:"center",gap:8,padding:"10px 22px",borderRadius:999,background:`${Y}12`,border:`1px solid ${Y}30`}}>
+            <TrendingUp size={15} style={{color:Y}}/><span style={{color:Y,fontWeight:700,fontSize:14}}>Rating is climbing</span>
           </motion.div>}
         </motion.div>
         {s>=2&&<motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{type:"spring"}} style={{display:"flex",alignItems:"center",gap:36}}>
-          {[{e:"😊",n:"Jason M.",l:"Happy",c:"#00c758"},{e:"🛡",n:"VLYR",l:"Protected",c:Y},{e:"💼",n:"Manager",l:"Resolved",c:"#00c758"}].map((p,i)=>(
+          {[{e:"😊",n:"Jason M.",l:"Happy",c:Y},{e:"🛡",n:"VLYR",l:"Protected",c:Y},{e:"💼",n:"Manager",l:"Resolved",c:"white"}].map((p,i)=>(
             <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
               <div style={{width:60,height:60,borderRadius:"50%",background:"#1A1A1A",border:`2px solid ${p.n==="VLYR"?`${Y}40`:"#2A2A2A"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{p.e}</div>
               <span style={{color:"#666",fontSize:12}}>{p.n}</span>
@@ -416,11 +457,11 @@ function StoryPanel({ paused }: { paused:boolean }) {
 
 // ── V2: Feature Spotlight ─────────────────────────────────────────────────────
 const FEATS=[
-  {Icon:Shield,  color:Y,        title:"Reputation Shield", sub:"Stop bad reviews before\nthey ever go public."},
-  {Icon:QrCode,  color:"#4285F4",title:"Pulse Check QR",    sub:"Every table, bag and receipt\ncaptures customer sentiment."},
-  {Icon:Bell,    color:"#FF6B6B",title:"Instant Alerts",    sub:"Know when a customer\nis unhappy — immediately."},
-  {Icon:BarChart3,color:"#00c758",title:"Live Analytics",   sub:"Your reputation,\ntracked in real time."},
-  {Icon:Star,    color:Y,        title:"Rating Amplifier",  sub:"Turn every happy customer\ninto a Google review."},
+  {Icon:Shield,   color:Y,     title:"Reputation Shield", sub:"Customer feedback captured privately.\nYou resolve it. It never reaches Google."},
+  {Icon:QrCode,   color:Y,     title:"Pulse Check QR",    sub:"A sticker on every bag, table and receipt.\nFeedback collected in seconds."},
+  {Icon:Bell,     color:Y,     title:"Instant Alerts",    sub:"The moment a complaint is submitted,\nyou get a text. React before it escalates."},
+  {Icon:BarChart3,color:Y,     title:"Command Center",    sub:"Every scan, review and order\nin one live dashboard."},
+  {Icon:Star,     color:Y,     title:"Google Growth",     sub:"Happy customers guided to your\nGoogle listing. Your rating climbs naturally."},
 ]
 
 function FeatureSpotlight({ paused }: { paused:boolean }) {
@@ -452,8 +493,8 @@ function FeatureSpotlight({ paused }: { paused:boolean }) {
       </div>
       <div style={{position:"absolute",bottom:28,left:0,right:0,display:"flex",justifyContent:"center"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 22px",borderRadius:999,background:"#111",border:"1px solid #1F1F1F"}}>
-          <div style={{width:8,height:8,borderRadius:"50%",background:"#00c758",animation:"pulse 1.5s infinite"}}/>
-          <span style={{color:"white",fontSize:13,fontWeight:500}}>2,400+ businesses protected</span>
+          <div style={{width:8,height:8,borderRadius:"50%",background:Y}}/>
+          <span style={{color:"white",fontSize:13,fontWeight:500}}>Be a founding member</span>
         </div>
       </div>
     </div>
@@ -462,11 +503,11 @@ function FeatureSpotlight({ paused }: { paused:boolean }) {
 
 // ── V3: Stats Wall ────────────────────────────────────────────────────────────
 const STATS=[
-  {v:"73%",   l:"of issues resolved",   s:"before reaching Google",   c:Y},
-  {v:"1,247", l:"businesses protected", s:"and counting today",        c:"#fff"},
-  {v:"+0.8★", l:"average rating lift",  s:"within the first 30 days", c:"#00c758"},
-  {v:"2×",    l:"more 5-star reviews",  s:"collected automatically",   c:Y},
-  {v:"60s",   l:"avg response time",    s:"from scan to alert",        c:"#4285F4"},
+  {v:"#1",    l:"reason customers leave",  s:"is feeling unheard at the moment of service", c:Y},
+  {v:"3s",    l:"to scan a VLYR QR",       s:"that's all it takes to capture feedback",     c:"#fff"},
+  {v:"< 60s", l:"from scan to your phone", s:"you know before they walk out the door",      c:Y},
+  {v:"2×",    l:"more feedback captured",  s:"vs asking customers to review manually",      c:"#fff"},
+  {v:"$0",    l:"cost to intercept",       s:"one complaint before it posts publicly",      c:Y},
 ]
 
 function StatsWall({ paused }: { paused:boolean }) {
@@ -628,16 +669,19 @@ const VCOMPS=[StoryPanel,FeatureSpotlight,StatsWall,VLYRFlow,LiveShield]
 const VLBLS=[{s:"Story",f:"The Story"},{s:"Features",f:"Features"},{s:"Stats",f:"By the Numbers"},{s:"Flow",f:"The VLYR Flow"},{s:"Live",f:"Live Shield"}]
 
 function PanelController() {
-  const init=useRef(Math.floor(Math.random()*VCOMPS.length)).current
-  const[ai,setAi]=useState(init),[paused,setPaused]=useState(false),[menu,setMenu]=useState(false),[key,setKey]=useState(0)
+  const[ai,setAi]=useState(0),[paused,setPaused]=useState(false),[menu,setMenu]=useState(false),[key,setKey]=useState(0)
+  // Pick the random panel only in the browser. Picking it during render made the
+  // server and browser show different panels (hydration error).
+  const[mounted,setMounted]=useState(false)
+  useEffect(()=>{setAi(Math.floor(Math.random()*VCOMPS.length));setMounted(true)},[])
   const switchTo=(i:number)=>{setAi(i);setKey(k=>k+1);setPaused(false);setMenu(false)}
   const V=VCOMPS[ai]
   return (
     <div style={{position:"absolute",inset:0}}>
       <AnimatePresence mode="wait">
-        <motion.div key={key} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.4}} style={{position:"absolute",inset:0}}>
+        {mounted&&<motion.div key={key} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.4}} style={{position:"absolute",inset:0}}>
           <V paused={paused}/>
-        </motion.div>
+        </motion.div>}
       </AnimatePresence>
       {/* Controls */}
       <div style={{position:"absolute",bottom:16,left:20,right:20,zIndex:30,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
@@ -676,11 +720,11 @@ function PanelController() {
 
 // ── Live dashboard ────────────────────────────────────────────────────────────
 const FITEMS=[
-  {icon:"⭐",text:"5★ posted to Google Reviews",sub:"Maria K. · now",c:Y},
-  {icon:"🛡",text:"Feedback captured privately", sub:"Anonymous · now",c:Y},
-  {icon:"📱",text:"New scan — storefront",       sub:"just now",      c:"#555"},
-  {icon:"⭐",text:"4★ posted to Google Reviews",sub:"James T. · now",c:Y},
-  {icon:"🛡",text:"Issue resolved before Google",sub:"Customer · now", c:Y},
+  {tag:"5★",  text:"Posted to Google Reviews",    sub:"Maria K. · now",   c:Y},
+  {tag:"—",   text:"Captured privately",           sub:"Anonymous · now",  c:Y},
+  {tag:"Scan",text:"New scan · storefront",        sub:"just now",         c:"#444"},
+  {tag:"4★",  text:"Posted to Google Reviews",    sub:"James T. · now",   c:Y},
+  {tag:"—",   text:"Resolved before Google",       sub:"Customer · now",   c:Y},
 ]
 
 function LiveDashboard({rating,totalReviews,businessName}:{rating:number;totalReviews:number;businessName:string}){
@@ -700,9 +744,9 @@ function LiveDashboard({rating,totalReviews,businessName}:{rating:number;totalRe
           <div style={{textAlign:"right"}}><div style={{fontSize:54,fontWeight:900,color:Y,lineHeight:1}}>{rating.toFixed(1)}</div><div style={{display:"flex",gap:2,justifyContent:"flex-end",marginTop:6}}><Stars n={Math.round(rating)} size={13}/></div><p style={{fontSize:13,color:"#555",marginTop:4}}>{totalReviews} reviews</p></div>
         </div>
         <div style={{display:"flex",borderBottom:"1px solid #181818"}}>
-          {([["feed","Live Feed",Zap],["sim","Simulator",BarChart3]] as const).map(([id,label,Icon])=>(
-            <button key={id} onClick={()=>setTab(id)} style={{display:"flex",alignItems:"center",gap:6,padding:"12px 20px",fontSize:14,fontWeight:600,color:tab===id?"white":"#555",border:"none",background:"transparent",cursor:"pointer",position:"relative"}}>
-              <Icon size={14}/>{label}
+          {([["feed","Live Feed"],["sim","Simulator"]] as const).map(([id,label])=>(
+            <button key={id} onClick={()=>setTab(id)} style={{padding:"12px 20px",fontSize:14,fontWeight:600,color:tab===id?"white":"#555",border:"none",background:"transparent",cursor:"pointer",position:"relative"}}>
+              {label}
               {tab===id&&<motion.div layoutId="dt" style={{position:"absolute",bottom:0,left:0,right:0,height:2,background:Y}}/>}
             </button>
           ))}
@@ -713,9 +757,9 @@ function LiveDashboard({rating,totalReviews,businessName}:{rating:number;totalRe
           {tab==="feed"&&(
             <motion.div key="f" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} style={{height:"100%",display:"flex",flexDirection:"column",gap:16}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                {[{l:"Today's scans",v:sc,c:"white",I:TrendingUp},{l:"Issues shielded",v:sh,c:Y,I:Shield}].map(({l,v,c,I})=>(
+                {[{l:"Today's scans",v:sc,c:"white"},{l:"Issues shielded",v:sh,c:Y}].map(({l,v,c})=>(
                   <div key={l} style={{padding:"18px 20px",borderRadius:20,background:"#111",border:"1px solid #1F1F1F"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><div style={{width:28,height:28,borderRadius:10,background:`${Y}12`,display:"flex",alignItems:"center",justifyContent:"center"}}><I size={15} style={{color:Y}}/></div><span style={{color:"#555",fontSize:13}}>{l}</span></div>
+                    <p style={{color:"#555",fontSize:12,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:12}}>{l}</p>
                     <div style={{fontSize:44,fontWeight:900,color:c,fontFamily:"Figtree,sans-serif"}}>{v}</div>
                   </div>
                 ))}
@@ -730,9 +774,10 @@ function LiveDashboard({rating,totalReviews,businessName}:{rating:number;totalRe
                     {feed.map(item=>(
                       <motion.div key={item.id} initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}} transition={{duration:0.3}}
                         style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:16,background:"#111",border:"1px solid #1F1F1F",overflow:"hidden"}}>
-                        <span style={{fontSize:22,flexShrink:0}}>{item.icon}</span>
+                        <div style={{width:36,height:24,borderRadius:6,background:`${item.c}14`,border:`1px solid ${item.c}25`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                          <span style={{fontSize:10,fontWeight:800,color:item.c,letterSpacing:"0.02em"}}>{item.tag}</span>
+                        </div>
                         <div style={{flex:1,minWidth:0}}><p style={{fontSize:14,fontWeight:500,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.text}</p><p style={{fontSize:12,color:"#555"}}>{item.sub}</p></div>
-                        <div style={{width:8,height:8,borderRadius:"50%",flexShrink:0,background:item.c}}/>
                       </motion.div>
                     ))}
                   </AnimatePresence>
@@ -747,17 +792,28 @@ function LiveDashboard({rating,totalReviews,businessName}:{rating:number;totalRe
                 <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:12,alignItems:"center",textAlign:"center"}}>
                   <div><p style={{fontSize:13,color:"#555",marginBottom:6}}>Current</p><div style={{fontSize:32,fontWeight:900,color:"white"}}>{rating.toFixed(1)}</div></div>
                   <div style={{fontSize:24,color:"#333"}}>→</div>
-                  <div><p style={{fontSize:13,color:"#555",marginBottom:6}}>Without VLYR</p><motion.div key={pN.toFixed(1)} initial={{scale:1.2}} animate={{scale:1}} style={{fontSize:32,fontWeight:900,color:pN<rating-0.05?"#f87171":pN>rating+0.05?"#00c758":"white"}}>{pN.toFixed(1)}</motion.div></div>
+                  <div><p style={{fontSize:13,color:"#555",marginBottom:6}}>Without VLYR</p><motion.div key={pN.toFixed(1)} initial={{scale:1.2}} animate={{scale:1}} style={{fontSize:32,fontWeight:900,color:"white"}}>{pN.toFixed(1)}</motion.div></div>
                 </div>
                 {(pos>0||neg>0)&&<motion.div initial={{opacity:0}} animate={{opacity:1}} style={{marginTop:16,paddingTop:16,borderTop:"1px solid #1F1F1F",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                   <div><p style={{fontSize:15,fontWeight:700,color:Y}}>With VLYR</p><p style={{fontSize:13,color:"#555"}}>73% blocked · 2× more positive</p></div>
                   <motion.div key={pW.toFixed(2)} initial={{scale:1.15}} animate={{scale:1}} style={{fontSize:36,fontWeight:900,color:Y,fontFamily:"Figtree,sans-serif"}}>{pW.toFixed(1)}</motion.div>
                 </motion.div>}
               </div>
-              {[{l:"Add 5-star reviews",icon:"⭐",v:pos,set:setPos,max:50,c:"#00c758"},{l:"Simulate bad reviews",icon:"★",v:neg,set:setNeg,max:20,c:"#f87171"}].map(({l,icon,v,set,max,c})=>(
+              {[
+                {l:"Add positive reviews",tag:"+5★",v:pos,set:setPos,max:50},
+                {l:"Simulate negative reviews",tag:"−1★",v:neg,set:setNeg,max:20},
+              ].map(({l,tag,v,set,max})=>(
                 <div key={l} style={{padding:"16px 20px",borderRadius:20,background:"#111",border:"1px solid #1F1F1F",display:"flex",flexDirection:"column",gap:12}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>{icon}</span><span style={{fontSize:15,fontWeight:600,color:"white"}}>{l}</span></div><span style={{fontSize:15,fontWeight:700,color:c}}>+{v}</span></div>
-                  <input type="range" min={0} max={max} value={v} onChange={e=>set(+e.target.value)} style={{width:"100%",accentColor:c,height:6}}/>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:36,height:22,borderRadius:5,background:`${Y}14`,border:`1px solid ${Y}25`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        <span style={{fontSize:10,fontWeight:800,color:Y}}>{tag}</span>
+                      </div>
+                      <span style={{fontSize:14,fontWeight:600,color:"white"}}>{l}</span>
+                    </div>
+                    <span style={{fontSize:14,fontWeight:700,color:Y}}>+{v}</span>
+                  </div>
+                  <input type="range" min={0} max={max} value={v} onChange={e=>set(+e.target.value)} style={{width:"100%",accentColor:Y,height:6}}/>
                 </div>
               ))}
             </motion.div>
@@ -768,11 +824,170 @@ function LiveDashboard({rating,totalReviews,businessName}:{rating:number;totalRe
   )
 }
 
+// ── Path A: Real reviews from Google ─────────────────────────────────────────
+function ReputationSnapshot({ businessName, rating, totalReviews, reviews, address }: {
+  businessName: string; rating: number; totalReviews: number
+  reviews: ReviewSnap[]; address?: string
+}) {
+  const negative = reviews.filter(r => r.rating <= 2).slice(0, 3)
+  const positive = reviews.filter(r => r.rating >= 4).slice(0, 1)
+  const hasNeg = negative.length > 0
+
+  return (
+    <div style={{position:"absolute",inset:0,background:DK,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {/* Header */}
+      <div style={{padding:"28px 28px 18px",borderBottom:"1px solid #181818",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <VLogo/>
+            <h2 style={{fontSize:17,fontWeight:800,color:"white",marginTop:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>
+              {businessName}
+            </h2>
+            {address && <p style={{fontSize:11,color:"#555",marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>{address}</p>}
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{fontSize:52,fontWeight:900,color:Y,lineHeight:1}}>{rating.toFixed(1)}</div>
+            <Stars n={Math.round(rating)} size={12}/>
+            <p style={{fontSize:11,color:"#555",marginTop:4}}>{totalReviews.toLocaleString()} reviews</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Review feed */}
+      <div style={{flex:1,overflow:"auto",padding:"16px 28px 20px"}}>
+        {hasNeg && (
+          <>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <div style={{width:7,height:7,borderRadius:"50%",background:"#EF4444",flexShrink:0}}/>
+              <span style={{fontSize:10,fontWeight:800,color:"#EF4444",letterSpacing:"0.12em",textTransform:"uppercase"}}>
+                {negative.length} review{negative.length!==1?"s":""} currently public & unmanaged
+              </span>
+            </div>
+            {negative.map((r,i)=>(
+              <motion.div key={i} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.1}}
+                style={{marginBottom:10,padding:"12px 14px",borderRadius:14,background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.18)",position:"relative"}}>
+                <div style={{position:"absolute",top:9,right:10,background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.28)",borderRadius:4,padding:"2px 7px"}}>
+                  <span style={{fontSize:9,fontWeight:800,color:"#F87171",letterSpacing:"0.08em"}}>LIVE ON GOOGLE</span>
+                </div>
+                <Stars n={r.rating} size={11}/>
+                <p style={{fontSize:12,color:"rgba(255,255,255,0.65)",marginTop:8,lineHeight:1.55}}>
+                  "{r.text.length>90?r.text.slice(0,90)+"…":r.text}"
+                </p>
+                <p style={{fontSize:11,color:"#444",marginTop:6}}>{r.author} · {r.relativeTime}</p>
+              </motion.div>
+            ))}
+          </>
+        )}
+
+        {positive.length>0 && (
+          <>
+            <div style={{display:"flex",alignItems:"center",gap:8,margin:"14px 0 10px"}}>
+              <div style={{width:7,height:7,borderRadius:"50%",background:Y,flexShrink:0}}/>
+              <span style={{fontSize:10,fontWeight:800,color:Y,letterSpacing:"0.12em",textTransform:"uppercase"}}>
+                With VLYR — routed to Google
+              </span>
+            </div>
+            {positive.map((r,i)=>(
+              <div key={i} style={{padding:"10px 14px",borderRadius:14,background:`${Y}07`,border:`1px solid ${Y}18`}}>
+                <Stars n={r.rating} size={11}/>
+                <p style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6,lineHeight:1.5}}>
+                  "{r.text.length>65?r.text.slice(0,65)+"…":r.text}"
+                </p>
+              </div>
+            ))}
+          </>
+        )}
+
+        {!hasNeg && reviews.length===0 && (
+          <div style={{textAlign:"center",padding:"32px 0"}}>
+            <p style={{fontSize:14,color:"#555"}}>Google profile connected.</p>
+            <p style={{fontSize:12,color:"#444",marginTop:6,lineHeight:1.6}}>VLYR will monitor every new review and alert you within 60 seconds.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Footer insight */}
+      {hasNeg && (
+        <div style={{padding:"14px 28px",borderTop:"1px solid #181818",background:"#080808",flexShrink:0}}>
+          <p style={{fontSize:12,color:"#666",lineHeight:1.65}}>
+            <span style={{color:Y,fontWeight:700}}>These {negative.length} review{negative.length!==1?"s":""}</span>
+            {" "}are visible to every potential customer searching for {businessName}. VLYR captures complaints before they post — automatically.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Path B: Manual path — no Google token yet ─────────────────────────────────
+function StandbyMode({ businessName, address }: { businessName?: string; address?: string }) {
+  return (
+    <div style={{position:"absolute",inset:0,background:DK,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"36px",gap:28}}>
+      <VLogo/>
+
+      {/* Shield pulse */}
+      <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        {[280,220,160].map((d,i)=>(
+          <motion.div key={i} style={{position:"absolute",width:d,height:d,borderRadius:"50%",border:`1.5px solid ${Y}`,opacity:0.08}}
+            animate={{scale:[1,1.06,1],opacity:[0.08,0.02,0.08]}} transition={{duration:3,repeat:Infinity,delay:i*0.7}}/>
+        ))}
+        <div style={{width:104,height:104,borderRadius:28,background:`${Y}12`,border:`2px solid ${Y}35`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <Shield size={50} style={{color:Y}}/>
+        </div>
+      </div>
+
+      <div style={{textAlign:"center"}}>
+        <p style={{fontSize:20,fontWeight:900,color:Y,letterSpacing:"-0.01em"}}>Shield on Standby</p>
+        {businessName && <p style={{fontSize:15,color:"white",marginTop:8,fontWeight:600}}>{businessName}</p>}
+        {address && <p style={{fontSize:12,color:"#555",marginTop:3}}>{address}</p>}
+        <p style={{fontSize:13,color:"#444",marginTop:12,lineHeight:1.65,maxWidth:280,margin:"12px auto 0"}}>
+          Complete your setup below. Connect your Google account after payment to activate live monitoring.
+        </p>
+      </div>
+
+      <div style={{width:"100%",display:"flex",flexDirection:"column",gap:8}}>
+        {[
+          "Live negative review alerts via SMS",
+          "Feedback captured before Google sees it",
+          "Real-time reputation dashboard",
+          "Rating protection active 24/7",
+        ].map((item,i)=>(
+          <motion.div key={i} initial={{opacity:0,x:-8}} animate={{opacity:1,x:0}} transition={{delay:0.4+i*0.1}}
+            style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:12,background:"#111",border:"1px solid #1F1F1F"}}>
+            <div style={{width:18,height:18,borderRadius:"50%",background:`${Y}14`,border:`1px solid ${Y}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <div style={{width:5,height:5,borderRadius:"50%",background:Y}}/>
+            </div>
+            <span style={{fontSize:12,color:"#555"}}>{item}</span>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
-export function OnboardingMarketingPanel({isVerified=false,businessRating=4.7,totalReviews=62,businessName="Your Business"}:Props){
+export function OnboardingMarketingPanel({
+  isVerified=false, businessRating=4.7, totalReviews=62,
+  businessName="Your Business", businessAddress, reviews, googleConnected,
+}:Props){
+  const showSnapshot = isVerified && googleConnected === true
+  const showStandby  = isVerified && googleConnected === false
+  const showDashboard= isVerified && googleConnected === undefined
+
   return(
     <div style={{position:"relative",width:"100%",height:"100%"}}>
-      {isVerified?<LiveDashboard rating={businessRating} totalReviews={totalReviews} businessName={businessName}/>:<PanelController/>}
+      {!isVerified && <PanelController/>}
+      {showSnapshot && (
+        reviews && reviews.length > 0
+          ? <ReputationSnapshot
+              businessName={businessName} rating={businessRating}
+              totalReviews={totalReviews} reviews={reviews}
+              address={businessAddress}
+            />
+          : <LiveDashboard rating={businessRating} totalReviews={totalReviews} businessName={businessName}/>
+      )}
+      {showStandby  && <StandbyMode businessName={businessName} address={businessAddress}/>}
+      {showDashboard && <LiveDashboard rating={businessRating} totalReviews={totalReviews} businessName={businessName}/>}
     </div>
   )
 }
