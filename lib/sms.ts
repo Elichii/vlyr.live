@@ -74,6 +74,15 @@ export type SmsResult =
 /** What to record in sms_messages.status for a send result. */
 export const smsStatus = (r: SmsResult) => (r.ok ? (r.simulated ? "dry_run" : "sent") : "failed")
 
+/**
+ * The live site, e.g. https://www.vlyr.live (NEXT_PUBLIC_APP_URL).
+ * Only a public https address can receive Twilio's delivery reports.
+ */
+function statusCallbackUrl() {
+  const base = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "")
+  return /^https:\/\//.test(base) ? `${base}/api/webhooks/twilio-sms/status` : undefined
+}
+
 let client: ReturnType<typeof twilio> | null = null
 const twilioClient = () => (client ??= twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!))
 
@@ -89,10 +98,12 @@ export async function sendSms(to: string, text: string): Promise<SmsResult> {
   if (!smsConfigured()) return { ok: false, error: "Text messaging is not set up." }
 
   const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID
+  const statusCallback = statusCallbackUrl()
   try {
     const message = await twilioClient().messages.create({
       to: `+${digits}`,
       body,
+      ...(statusCallback ? { statusCallback } : {}),
       ...(messagingServiceSid ? { messagingServiceSid } : { from: process.env.TWILIO_PHONE_NUMBER! }),
     })
     return { ok: true, id: message.sid }

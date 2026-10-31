@@ -16,6 +16,7 @@ interface Settings {
   enabled: boolean
   phone: string | null
   pendingPhone: string | null
+  codeUndelivered?: boolean
 }
 
 const fetchSettings = async (): Promise<Settings> => {
@@ -26,7 +27,10 @@ const fetchSettings = async (): Promise<Settings> => {
 }
 
 export function TextAlertsCard() {
-  const { data: s, mutate } = useSWR("sms-alerts", fetchSettings)
+  const { data: s, mutate } = useSWR("sms-alerts", fetchSettings, {
+    // While a code is on its way, check every few seconds whether it was delivered
+    refreshInterval: (d) => (d?.pendingPhone && !d.phone && !d.codeUndelivered ? 5000 : 0),
+  })
   const [phone, setPhone] = useState("")
   const [code, setCode] = useState("")
   const [busy, setBusy] = useState<string | null>(null)
@@ -158,6 +162,11 @@ export function TextAlertsCard() {
             </form>
           )}
 
+          {waiting && s.codeUndelivered && !error && (
+            <p className="text-xs text-red-500 mt-2">
+              Your carrier didn&apos;t deliver the code to {s.pendingPhone}. Check the number, or try again in a few minutes.
+            </p>
+          )}
           {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
           {note && <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">{note}</p>}
           {!confirmed && (

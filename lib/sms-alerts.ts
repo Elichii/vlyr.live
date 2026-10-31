@@ -32,6 +32,8 @@ export interface AlertSettings {
   phone: string | null
   /** Masked number waiting for its code */
   pendingPhone: string | null
+  /** The last code we texted could not be delivered to that number */
+  codeUndelivered: boolean
 }
 
 export class SmsAlertError extends Error {}
@@ -58,11 +60,25 @@ export async function getAlertSettings(merchantId: string): Promise<AlertSetting
     .eq("merchant_id", merchantId)
     .maybeSingle()
   const pendingLive = data?.pending_phone && data.code_expires_at && new Date(data.code_expires_at) > new Date()
+  let codeUndelivered = false
+  if (pendingLive) {
+    // Delivery report for the latest code (filled in by /api/webhooks/twilio-sms/status)
+    const { data: last } = await createAdminClient()
+      .from("sms_messages")
+      .select("status, delivery_status")
+      .eq("merchant_id", merchantId)
+      .eq("kind", "verify")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    codeUndelivered = !!last && (last.status === "failed" || last.delivery_status === "undelivered" || last.delivery_status === "failed")
+  }
   return {
     available: alertsLive(),
     enabled: !!data?.enabled && !!data.phone,
     phone: data?.phone ? maskPhone(data.phone) : null,
     pendingPhone: pendingLive ? maskPhone(data!.pending_phone!) : null,
+    codeUndelivered,
   }
 }
 
@@ -167,9 +183,10 @@ export async function sendTestAlert(merchantId: string) {
   if (!res.ok) throw new SmsAlertError("The test text couldn't be sent. Please try again in a minute.")
 }
 
+/** "vlyr.live/dashboard/feedback": always the live site, since texts go to real phones. */
 function dashboardLink() {
-  const base = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SCAN_BASE_URL || "https://vlyr.live").replace(/\/$/, "")
-  return `${base.replace(/^https?:\/\//, "")}/dashboard/feedback`
+  const base = /^https:\/\//.test(process.env.NEXT_PUBLIC_APP_URL ?? "") ? process.env.NEXT_PUBLIC_APP_URL! : "https://vlyr.live"
+  return `${base.replace(/\/$/, "").replace(/^https:\/\/(www\.)?/, "")}/dashboard/feedback`
 }
 
 /**
