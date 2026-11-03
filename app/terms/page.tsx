@@ -104,6 +104,22 @@ export default function TermsPage() {
                 These Terms shall be governed by and construed in accordance with the laws of the State of Delaware, without regard to its conflict of law provisions.
               </p>
             </div>
+
+            <div>
+              <h2 className="text-xl font-semibold text-foreground mt-8 mb-3">10. SMS Text Alerts</h2>
+              <ul className="list-disc pl-6 text-muted-foreground space-y-2">
+                <li><strong className="text-foreground">Program:</strong> VLYR Feedback Alerts, operated by Mare LLC. When you enter your mobile number, we text you account verification codes and automated alerts about customer feedback (for example, when a customer leaves a 1–3 star rating).</li>
+                <li><strong className="text-foreground">Consent:</strong> Texts are sent only to numbers you enter and confirm. Consent is not a condition of purchase.</li>
+                <li><strong className="text-foreground">Frequency:</strong> Message frequency varies based on feedback activity.</li>
+                <li><strong className="text-foreground">Cost:</strong> Message and data rates may apply.</li>
+                <li><strong className="text-foreground">Opt out:</strong> Reply STOP to any message to cancel at any time. You will get one confirmation text and no further messages. You can also switch alerts off in your dashboard.</li>
+                <li><strong className="text-foreground">Help:</strong> Reply HELP for help, or email{" "}
+                  <a href="mailto:support@vlyr.io" className="text-[#FFE100] hover:underline">support@vlyr.io</a>.</li>
+                <li>Carriers are not liable for delayed or undelivered messages.</li>
+                <li>Your number is handled as described in our{" "}
+                  <Link href="/privacy" className="text-[#FFE100] hover:underline">Privacy Policy</Link>; it is never shared with third parties or affiliates for marketing.</li>
+              </ul>
+            </div>
           </section>
 
           <div className="mt-12 pt-8 border-t border-border">

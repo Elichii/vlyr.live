@@ -106,9 +106,29 @@ export default function PrivacyPage() {
             </div>
 
             <div>
-              <h2 className="text-xl font-semibold text-foreground mt-8 mb-3">8. Contact and Data Subject Rights</h2>
+              <h2 className="text-xl font-semibold text-foreground mt-8 mb-3">8. SMS Text Messages</h2>
+              <p className="text-muted-foreground leading-relaxed mb-3">
+                If you give us your mobile number, we use it only to send account verification codes and the automated
+                feedback alerts you asked for (for example, a text when a customer leaves a low rating). Texts are sent by
+                Mare LLC through our SMS provider, Twilio.
+              </p>
+              <ul className="list-disc pl-6 text-muted-foreground space-y-2">
+                <li>No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.</li>
+                <li>Text messaging originator opt-in data and consent are not shared with any third parties, except the SMS provider that delivers our messages.</li>
+                <li>We keep a record of your number, when you confirmed it, and the messages we sent, to provide the service and honour opt-outs.</li>
+                <li>Reply STOP to any message to stop receiving texts, or HELP for help. You can also switch alerts off in your dashboard.</li>
+              </ul>
+            </div>
+
+            <div>
+              <h2 className="text-xl font-semibold text-foreground mt-8 mb-3">9. Contact and Data Subject Rights</h2>
               <p className="text-muted-foreground leading-relaxed mb-3">
                 You have the right to access, correct, or delete your personal data. For all privacy-related inquiries or to exercise your rights, please contact:
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                Mare LLC (VLYR)<br />
+                Email:{" "}
+                <a href="mailto:support@vlyr.io" className="text-[#FFE100] hover:underline">support@vlyr.io</a>
               </p>
 
             </div>

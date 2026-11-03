@@ -171,8 +171,11 @@ export function TextAlertsCard() {
           {note && <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">{note}</p>}
           {!confirmed && (
             <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-              By confirming, you agree to receive alert texts from VLYR about your customer ratings. Message frequency varies.
-              Msg &amp; data rates may apply. Reply STOP to opt out, or switch alerts off here at any time.
+              By entering your mobile number, you consent to receive account verification and automated feedback alert SMS
+              messages from VLYR (operated by Mare LLC). Consent is not a condition of purchase. Msg frequency varies based on
+              feedback activity. Msg &amp; data rates may apply. Reply STOP to cancel at any time, or HELP for support. View{" "}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">Privacy Policy</a> and{" "}
+              <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">Terms</a>.
             </p>
           )}
         </div>

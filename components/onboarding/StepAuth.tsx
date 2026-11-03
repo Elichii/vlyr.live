@@ -229,7 +229,13 @@ export function StepAuth({ data, onChange, onNext, onBack }: StepAuthProps) {
             className="pl-10 h-12 rounded-xl bg-[#FAFAFA] border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:ring-1 focus-visible:ring-[#0A0A0A]/20 focus-visible:border-[#0A0A0A]"
           />
         </div>
-        <p className="text-xs text-[#8C8C8C]">For orders and support. You can switch on text alerts later in your dashboard.</p>
+        <p className="text-xs text-[#595959] leading-relaxed">
+          By entering your mobile number, you consent to receive account verification and automated feedback alert SMS
+          messages from VLYR (operated by Mare LLC). Consent is not a condition of purchase. Msg frequency varies based on
+          feedback activity. Msg &amp; data rates may apply. Reply STOP to cancel at any time, or HELP for support. View{" "}
+          <a href="/privacy" className="underline hover:text-[#0A0A0A]" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and{" "}
+          <a href="/terms" className="underline hover:text-[#0A0A0A]" target="_blank" rel="noopener noreferrer">Terms</a>.
+        </p>
       </div>
 
       {/* ── Trust strip ─────────────────────────────────────────── */}
