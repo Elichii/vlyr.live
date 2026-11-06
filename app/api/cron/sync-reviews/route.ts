@@ -42,6 +42,30 @@ interface GoogleReviewsResponse {
   nextPageToken?: string
 }
 
+/** Only reviews written this recently can trigger a text (older ones are just recorded). */
+const ALERT_WINDOW_MS = 48 * 60 * 60 * 1000
+
+interface ManagedBusiness { locationId: string; accountName?: string }
+
+/**
+ * Reviews live under accounts/{a}/locations/{l} in the Business Profile
+ * (v4) API. The account comes from the list Google gave us at sign-in;
+ * if it isn't there, ask Google which of the user's accounts holds it.
+ */
+async function reviewsBase(locationId: string, managed: unknown, accessToken: string): Promise<string | null> {
+  const list: ManagedBusiness[] = Array.isArray(managed) ? managed : typeof managed === "string" ? JSON.parse(managed) : []
+  const known = list.find((b) => b.locationId === locationId)?.accountName
+  if (known && /^accounts\/\d+$/.test(known)) return `https://mybusiness.googleapis.com/v4/${known}/${locationId}/reviews`
+  const res = await fetch("https://mybusinessaccountmanagement.googleapis.com/v1/accounts", { headers: { Authorization: `Bearer ${accessToken}` } })
+  const json = res.ok ? await res.json() : {}
+  for (const a of (json.accounts ?? []) as { name: string }[]) {
+    const base = `https://mybusiness.googleapis.com/v4/${a.name}/${locationId}/reviews`
+    const probe = await fetch(`${base}?pageSize=1`, { headers: { Authorization: `Bearer ${accessToken}` } })
+    if (probe.ok) return base
+  }
+  return null
+}
+
 const STAR_RATING_MAP: Record<string, number> = {
   ONE: 1,
   TWO: 2,
@@ -70,7 +94,7 @@ export async function GET(request: Request) {
     // Get all verified merchants with valid Google connections
     const { data: merchants, error: merchantsError } = await supabase
       .from("merchants")
-      .select("id, business_name, google_verified_location_id, google_access_token, google_refresh_token")
+      .select("id, business_name, google_verified_location_id, google_managed_businesses, last_review_fetch_at")
       .eq("google_ownership_verified", true)
       .not("google_verified_location_id", "is", null)
     
@@ -99,8 +123,17 @@ export async function GET(request: Request) {
         
         // Fetch reviews from Google Business Profile API
         const locationId = merchant.google_verified_location_id
-        const reviewsUrl = `https://mybusinessaccountmanagement.googleapis.com/v1/${locationId}/reviews`
-        
+        const base = await reviewsBase(locationId, merchant.google_managed_businesses, accessToken)
+        if (!base) {
+          merchantResult.errors.push("Could not find the Google account that holds this location")
+          results.push(merchantResult)
+          continue
+        }
+        // Newest first; 50 is plenty between checks
+        const reviewsUrl = `${base}?pageSize=50&orderBy=${encodeURIComponent("updateTime desc")}`
+        // The first check for a business only records existing reviews (no texts)
+        const firstSync = !merchant.last_review_fetch_at
+
         const reviewsResponse = await fetch(reviewsUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
         })
@@ -115,6 +148,7 @@ export async function GET(request: Request) {
         const reviewsData: GoogleReviewsResponse = await reviewsResponse.json()
         
         if (!reviewsData.reviews || reviewsData.reviews.length === 0) {
+          await supabase.from("merchants").update({ last_review_fetch_at: new Date().toISOString() }).eq("id", merchant.id)
           results.push(merchantResult)
           continue
         }
@@ -158,44 +192,25 @@ export async function GET(request: Request) {
           
           merchantResult.newReviews++
           
-          // Process reviews based on star rating
-          if (starRating <= 2) {
-            // RECOVERY workflow: 1-2 star reviews trigger immediate SMS alert
+          // Low ratings: text the manager, but only for reviews that just came in
+          const recent = Date.now() - new Date(review.createTime).getTime() < ALERT_WINDOW_MS
+          if (starRating <= 3 && !firstSync && recent) {
             try {
-              await triggerNegativeReviewSMS(merchant.id, merchant.business_name, review, starRating)
-              
-              // Mark as processed with RECOVERY workflow
+              const sent = await triggerNegativeReviewSMS(merchant.id, merchant.business_name, review, starRating)
               await supabase.from("google_reviews").update({
-                sms_sent: true,
-                sms_sent_at: new Date().toISOString(),
+                ...(sent ? { sms_sent: true, sms_sent_at: new Date().toISOString() } : {}),
                 processed: true,
                 processed_at: new Date().toISOString(),
-                workflow_type: "RECOVERY",
+                workflow_type: starRating === 3 ? "NEUTRAL" : "RECOVERY",
               }).eq("merchant_id", merchant.id).eq("review_id", reviewId)
             } catch (smsError) {
               merchantResult.errors.push(`SMS failed: ${smsError instanceof Error ? smsError.message : "Unknown error"}`)
             }
-          } else if (starRating === 3) {
-            // 3-star reviews: SMS alert but mark as NEUTRAL workflow
-            try {
-              await triggerNegativeReviewSMS(merchant.id, merchant.business_name, review, starRating)
-              
-              await supabase.from("google_reviews").update({
-                sms_sent: true,
-                sms_sent_at: new Date().toISOString(),
-                processed: true,
-                processed_at: new Date().toISOString(),
-                workflow_type: "NEUTRAL",
-              }).eq("merchant_id", merchant.id).eq("review_id", reviewId)
-            } catch (smsError) {
-              merchantResult.errors.push(`SMS failed: ${smsError instanceof Error ? smsError.message : "Unknown error"}`)
-            }
-          } else if (starRating >= 4) {
-            // REWARD workflow: 4-5 star reviews marked for future reward automation
+          } else {
             await supabase.from("google_reviews").update({
               processed: true,
               processed_at: new Date().toISOString(),
-              workflow_type: starRating === 5 ? "REWARD_5STAR" : "REWARD_4STAR",
+              workflow_type: starRating >= 4 ? (starRating === 5 ? "REWARD_5STAR" : "REWARD_4STAR") : "HISTORICAL",
             }).eq("merchant_id", merchant.id).eq("review_id", reviewId)
           }
         }
@@ -241,15 +256,15 @@ async function triggerNegativeReviewSMS(
   businessName: string,
   review: GoogleReview,
   starRating: number
-): Promise<void> {
-  if (!alertsLive()) return
+): Promise<boolean> {
+  if (!alertsLive()) return false
   const supabase = getServiceClient()
   const { data: settings } = await supabase
     .from("sms_alert_settings")
     .select("phone, enabled")
     .eq("merchant_id", merchantId)
     .maybeSingle()
-  if (!settings?.enabled || !settings.phone) return
+  if (!settings?.enabled || !settings.phone) return false
 
   const reviewer = review.reviewer?.displayName || "A customer"
   const text = alertText({ stars: starRating, businessName, seq: null, feedback: `Google review by ${reviewer}: ${review.comment || "no comment"}` })
@@ -260,4 +275,5 @@ async function triggerNegativeReviewSMS(
   })
   if (!res.ok && res.code === TWILIO_OPTED_OUT) await optOutPhone(settings.phone)
   if (!res.ok) throw new Error(`SMS failed: ${res.error}`)
+  return !(res.ok && res.simulated)
 }

@@ -5,7 +5,6 @@
  * Access tokens expire after ~1 hour, so we need to refresh them before making API calls.
  */
 
-import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 interface TokenRefreshResult {
@@ -31,7 +30,9 @@ interface GoogleTokenResponse {
  * @returns TokenRefreshResult with the new access token or error
  */
 export async function refreshGoogleToken(merchantId: string): Promise<TokenRefreshResult> {
-  const supabase = await createClient()
+  // Server-only: callers pass the signed-in user's id or (cron) a merchant id.
+  // Uses the service-role client so it also works outside a browser request.
+  const supabase = createAdminClient()
   
   // Get merchant's refresh token
   const { data: merchant, error: fetchError } = await supabase
