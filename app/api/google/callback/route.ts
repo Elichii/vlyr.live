@@ -272,7 +272,7 @@ export async function GET(request: NextRequest) {
       // APPROACH 2: For each account, fetch locations
       for (const account of accounts) {
         const accountName = account.name // e.g., "accounts/123456789"
-        const locationsUrl = `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title,metadata,storefrontAddress`
+        const locationsUrl = `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title,metadata,storefrontAddress&pageSize=100`
         
         console.log("[v0] Fetching locations for account:", accountName)
         
@@ -317,7 +317,7 @@ export async function GET(request: NextRequest) {
       }
       
       // APPROACH 3: Also try wildcard query as fallback for Modern Experience businesses
-      const wildcardUrl = "https://mybusinessbusinessinformation.googleapis.com/v1/accounts/-/locations?readMask=name,title,metadata.placeId,storefrontAddress"
+      const wildcardUrl = "https://mybusinessbusinessinformation.googleapis.com/v1/accounts/-/locations?readMask=name,title,metadata.placeId,storefrontAddress&pageSize=100"
       
       console.log("[v0] Calling wildcard locations API:", wildcardUrl)
       

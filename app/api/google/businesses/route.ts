@@ -62,13 +62,17 @@ export async function GET() {
       const accounts: Array<{ name: string; type?: string }> = accountsData.accounts ?? []
 
       for (const account of accounts) {
+        // Google pages locations (max 100 per page); follow every page
+        let pageToken = ""
+        for (let page = 0; page < 20; page++) {
         const locRes = await fetchWithRetry(
-          `https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?readMask=name,title,metadata,storefrontAddress`,
+          `https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?readMask=name,title,metadata,storefrontAddress&pageSize=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
           authHeaders
         )
 
         if (locRes.ok) {
           const locData = await locRes.json()
+          pageToken = locData.nextPageToken ?? ""
           for (const loc of locData.locations ?? []) {
             const placeId: string | null = loc.metadata?.placeId ?? null
             businesses.push({
@@ -83,6 +87,9 @@ export async function GET() {
           }
         } else {
           errors.push(`Locations API ${locRes.status} for ${account.name}`)
+          break
+        }
+        if (!pageToken) break
         }
       }
     } else {
@@ -95,7 +102,7 @@ export async function GET() {
   // --- Approach 2: Wildcard query for Modern Experience businesses ---
   try {
     const wildcardRes = await fetchWithRetry(
-      "https://mybusinessbusinessinformation.googleapis.com/v1/accounts/-/locations?readMask=name,title,metadata,storefrontAddress",
+      "https://mybusinessbusinessinformation.googleapis.com/v1/accounts/-/locations?readMask=name,title,metadata,storefrontAddress&pageSize=100",
       authHeaders
     )
 
