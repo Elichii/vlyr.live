@@ -66,7 +66,9 @@ export interface SheetOptions {
 }
 
 export async function buildLabelSheetPdf(opts: SheetOptions): Promise<Uint8Array> {
-  const { design, labels, paper, inkSaver } = opts
+  const { labels, paper, inkSaver } = opts
+  // Every sticker is 1.5" × 3": older saved sizes print as the portrait one
+  const design: LabelDesign = { ...opts.design, labelSize: opts.design.labelSize === "2x1" ? "2x1" : "1x2" }
   const rewardOffer = toPdfText(opts.rewardOffer)
   const pdf = await PDFDocument.create()
   const regular = await pdf.embedFont(StandardFonts.Helvetica)
@@ -114,6 +116,7 @@ export async function buildLabelSheetPdf(opts: SheetOptions): Promise<Uint8Array
       pageNo: p + 1,
       pageCount,
       paperName: PAPER[paper].name,
+      stickerSize: design.labelSize === "2x1" ? '3" × 1.5"' : '1.5" × 3"',
     })
 
     pageLabels.forEach((label, i) => {
@@ -298,7 +301,7 @@ async function embedLogo(pdf: PDFDocument, bytes: Uint8Array) {
   return null
 }
 
-/** The modern 1"×2" / 2"×1" sticker, drawn from the shared layout. */
+/** The modern 1.5"×3" / 3"×1.5" sticker, drawn from the shared layout. */
 function drawModernLabel(
   page: PDFPage,
   o: {
@@ -385,7 +388,7 @@ function drawModernLabel(
 
 function drawPageHeader(
   page: PDFPage,
-  o: { regular: PDFFont; bold: PDFFont; businessName: string; range: string; pageNo: number; pageCount: number; paperName: string },
+  o: { regular: PDFFont; bold: PDFFont; businessName: string; range: string; pageNo: number; pageCount: number; paperName: string; stickerSize: string },
 ) {
   const { width, height } = page.getSize()
   const grey = rgb(0.35, 0.35, 0.35)
@@ -404,7 +407,8 @@ function drawPageHeader(
     color: grey,
   })
 
-  const hint = `Print on ${o.paperName} sticker paper at 100% / "Actual size" (not "Fit to page"). Cut between the corner marks.`
+  const paperSize = o.paperName === "A4" ? "A4 (210 × 297 mm)" : `${o.paperName} (8.5" × 11")`
+  const hint = `Print on ${paperSize} sticker paper at 100% / "Actual size" (not "Fit to page"). Each sticker is ${o.stickerSize}. Cut between the corner marks.`
   page.drawText(fit(hint, o.regular, 6.5, right - left), { x: left, y: height - 27, size: 6.5, font: o.regular, color: grey })
 }
 

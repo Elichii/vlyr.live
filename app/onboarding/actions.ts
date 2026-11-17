@@ -1,8 +1,11 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import type { OnboardingData } from "@/lib/onboarding-types"
 import { PACKAGES, HARDWARE_PRICES } from "@/lib/onboarding-types"
+import { after } from "next/server"
+import { sendWelcomeEmail } from "@/lib/email-alerts"
 
 /**
  * Persist plan choice immediately after account creation (Step 2).
@@ -60,11 +63,27 @@ export async function fetchOnboardingProgress() {
 
   const { data: merchant } = await supabase
     .from("merchants")
-    .select("onboarding_step_index, package_id, billing_cycle")
+    .select("onboarding_step_index, package_id, billing_cycle, google_ownership_verified")
     .eq("id", user.id)
     .single()
 
-  return merchant
+  if (!merchant) return null
+  return { ...merchant, plan_pending: !!user.user_metadata?.plan_pending }
+}
+
+/** A signed-in owner picked their plan on the Plan step. */
+export async function chooseSignedInPlan(packageId: string, billingCycle: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: "Not authenticated. Please sign in again." }
+  if (!PACKAGES.some((p) => p.id === packageId)) return { success: false, error: "Please choose a plan." }
+
+  const res = await persistPlanChoice(user.id, packageId, billingCycle === "annual" ? "annual" : "monthly")
+  if (!res.success) return res
+  await createAdminClient().auth.admin.updateUserById(user.id, {
+    user_metadata: { ...(user.user_metadata ?? {}), plan_pending: false, package_id: packageId },
+  })
+  return { success: true, error: null }
 }
 
 export async function persistOnboarding(data: OnboardingData) {
@@ -94,7 +113,7 @@ export async function persistOnboarding(data: OnboardingData) {
     .from("merchants")
     .update({
       email: data.email,
-      username: data.username,
+      ...(data.username ? { username: data.username } : {}),
       phone: data.phone,
       business_name: data.businessName,
       business_category: data.businessCategory,
@@ -102,6 +121,9 @@ export async function persistOnboarding(data: OnboardingData) {
       google_place_id: data.googlePlaceId,
       lat: data.lat,
       lng: data.lng,
+      ...(data.googleAddress ? { address: data.googleAddress } : {}),
+      ...(data.googlePhone ? { google_phone: data.googlePhone } : {}),
+      ...(data.googleWebsite ? { google_website: data.googleWebsite } : {}),
       package_id: data.packageId,
       billing_cycle: data.billingCycle,
       updated_at: new Date().toISOString(),
@@ -148,6 +170,8 @@ export async function persistOnboarding(data: OnboardingData) {
     })
   }
 
+  await saveOwnerDetails(user.id, data)
+  await markOnboardingComplete(user.id)
   return { success: true, error: null }
 }
 
@@ -165,7 +189,7 @@ export async function persistFreeOnboarding(data: OnboardingData) {
 
   const fields: Record<string, unknown> = {
     email: data.email,
-    username: data.username,
+    ...(data.username ? { username: data.username } : {}),
     phone: data.phone,
     business_name: data.businessName,
     business_category: data.businessCategory,
@@ -173,6 +197,9 @@ export async function persistFreeOnboarding(data: OnboardingData) {
     google_place_id: data.googlePlaceId,
     lat: data.lat,
     lng: data.lng,
+    ...(data.googleAddress ? { address: data.googleAddress } : {}),
+    ...(data.googlePhone ? { google_phone: data.googlePhone } : {}),
+    ...(data.googleWebsite ? { google_website: data.googleWebsite } : {}),
   }
   const update: Record<string, unknown> = {
     package_id: "free",
@@ -185,5 +212,31 @@ export async function persistFreeOnboarding(data: OnboardingData) {
 
   const { error } = await supabase.from("merchants").update(update).eq("id", user.id)
   if (error) return { success: false, error: `Profile save failed: ${error.message}` }
+  await saveOwnerDetails(user.id, data)
+  await markOnboardingComplete(user.id)
   return { success: true, error: null }
+}
+
+/** Owner name and role (scripts/013). Saved on their own so setup works even before that script runs. */
+async function saveOwnerDetails(merchantId: string, data: OnboardingData) {
+  const update: Record<string, string> = {}
+  if (data.ownerName?.trim()) update.owner_name = data.ownerName.trim().slice(0, 120)
+  if (data.ownerTitle?.trim()) update.owner_title = data.ownerTitle.trim().slice(0, 80)
+  if (!Object.keys(update).length) return
+  const { error } = await createAdminClient().from("merchants").update(update).eq("id", merchantId)
+  if (error) console.error("[onboarding] owner details not saved:", error.message)
+}
+
+/** Setup is finished: the dashboard opens from now on (server-only field). */
+async function markOnboardingComplete(merchantId: string) {
+  const { data, error } = await createAdminClient()
+    .from("merchants")
+    .update({ onboarding_completed_at: new Date().toISOString() })
+    .eq("id", merchantId)
+    .is("onboarding_completed_at", null)
+    .select("id")
+  // First time only: welcome email
+  if (!error && data?.length) after(() => sendWelcomeEmail(merchantId))
+  // Column missing until scripts/012 runs: setup still works as before
+  if (error && !/onboarding_completed_at/.test(error.message)) console.error("[onboarding] could not mark complete:", error.message)
 }

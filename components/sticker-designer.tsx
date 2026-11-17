@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * Designer for the modern VLYR sticker (portrait 1"×2" or landscape 2"×1").
+ * Designer for the modern VLYR sticker (portrait 1.5"×3" or landscape 3"×1.5").
  * The preview uses the same layout as the printed PDF (lib/sticker-layout.ts).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -154,7 +154,7 @@ export function StickerDesigner({
 }: StickerDesignerProps) {
   const name = isPlaceholder(initialBusinessName) ? "" : initialBusinessName.trim()
   // The standard VLYR sticker (the approved design) used on the free trial; the logo spot shows the business name
-  const standard = useMemo<LabelDesign>(() => ({ ...defaultDesign(name, null), labelSize: "vlyr" }), [name])
+  const standard = useMemo<LabelDesign>(() => ({ ...defaultDesign(name, null), labelSize: "1x2" }), [name])
   const [design, setDesign] = useState<LabelDesign>(() =>
     initialDesign && (initialDesign.labelSize === "1x2" || initialDesign.labelSize === "2x1")
       ? { ...defaultDesign(name, null), ...initialDesign }
@@ -254,7 +254,7 @@ export function StickerDesigner({
   const svg = useMemo(() => stickerSvg(layout, { logo: shown.logoUrl, vlyr: vlyr?.src ?? "" }), [layout, shown.logoUrl, vlyr])
 
   const portrait = shown.labelSize === "1x2"
-  const standardSize = shown.labelSize === "vlyr"
+  const standardSize = locked
   const darkBg = luminanceOf(design.backgroundColor) < 0.45
   const logoClash = !!design.logoUrl && !!logo && logo.tone === (darkBg ? "dark" : "light")
   const activeTheme = THEMES.find(
@@ -269,7 +269,7 @@ export function StickerDesigner({
           {/* Orientation (paid plans) */}
           {standardSize ? (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-foreground">
-              Standard VLYR sticker · 2.5&quot; × 4.3&quot;
+              Standard VLYR sticker · 1.5&quot; × 3&quot;
             </span>
           ) : (
           <div className="inline-flex rounded-xl border border-border bg-background p-1" role="radiogroup" aria-label="Sticker orientation">
@@ -285,7 +285,7 @@ export function StickerDesigner({
                 }`}
               >
                 <span className={`inline-block border-[1.5px] border-current rounded-[3px] ${s === "2x1" ? "w-5 h-2.5" : "w-2.5 h-5"}`} />
-                {s === "2x1" ? 'Landscape 2" × 1"' : 'Portrait 1" × 2"'}
+                {s === "2x1" ? 'Landscape 3" × 1.5"' : 'Portrait 1.5" × 3"'}
               </button>
             ))}
           </div>
@@ -294,9 +294,7 @@ export function StickerDesigner({
           <div
             className="drop-shadow-[0_8px_24px_rgba(0,0,0,0.18)] transition-all"
             style={
-              standardSize
-                ? { width: "min(260px, 70vw)", aspectRatio: "180 / 309" }
-                : portrait
+              portrait
                   ? { width: "min(220px, 60vw)", aspectRatio: "1 / 2" }
                   : { width: "min(440px, 100%)", aspectRatio: "2 / 1" }
             }
@@ -305,9 +303,7 @@ export function StickerDesigner({
           />
 
           <p className="text-[11px] text-muted-foreground text-center max-w-sm leading-relaxed">
-            {standardSize
-              ? 'Prints at exactly 2.5" wide × 4.3" tall. Every sticker gets its own QR code.'
-              : `Shown larger than life. Prints at exactly ${portrait ? '1" wide × 2" tall' : '2" wide × 1" tall'}.`}
+            {`Shown larger than life. Prints at exactly ${portrait ? '1.5" wide × 3" tall' : '3" wide × 1.5" tall'}.`}{standardSize ? " Every sticker gets its own QR code." : ""}
           </p>
           {layout.qrAdjusted && (
             <p className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 max-w-sm">
@@ -329,7 +325,7 @@ export function StickerDesigner({
                 <p className="text-sm font-semibold text-foreground">Make the stickers yours</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Free stickers use the standard VLYR design. Upgrade to add your own colours and wording, style the QR code,
-                  and choose 1&quot; × 2&quot; or 2&quot; × 1&quot; sizes.
+                  and choose portrait or landscape.
                 </p>
                 <Link href="/dashboard/upgrade" className="inline-block">
                   <Button size="sm" className="h-9 gap-1.5 rounded-lg bg-[#FFE100] text-[#111] hover:bg-[#FFE100]/90 font-semibold">

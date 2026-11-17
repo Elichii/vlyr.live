@@ -75,11 +75,11 @@ const BATCH_COLUMNS = "id, quantity, first_seq, last_seq, paper, ink_saver, desi
 /** Trial stickers can't be customised: they always use the standard VLYR design. */
 export const designLocked = (allowance: LabelAllowance) => allowance.limit !== null
 
-/** The standard VLYR sticker (the approved design): "YOUR LOGO" shows the business name. */
+/** The standard VLYR sticker (1.5" × 3", the approved design): "YOUR LOGO" shows the business name. */
 export async function trialDesign(merchantId: string): Promise<LabelDesign> {
   const { data } = await createAdminClient().from("merchants").select("business_name").eq("id", merchantId).maybeSingle()
   return {
-    labelSize: "vlyr",
+    labelSize: "1x2",
     shape: "rounded-rect",
     businessName: (data?.business_name as string | null)?.trim() || "",
     logoUrl: null,
@@ -114,14 +114,15 @@ export function sanitizeDesign(input: unknown, merchantId?: string): LabelDesign
   const d = (input ?? {}) as Partial<LabelDesign>
   const hex = (v: unknown, fallback: string) => (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : fallback)
   const text = (v: unknown, fallback: string, max = 60) => (typeof v === "string" ? v.replace(/\s+/g, " ").slice(0, max) : fallback)
-  const modern = d.labelSize === "1x2" || d.labelSize === "2x1" || d.labelSize === "vlyr"
+  // Every sticker is 1.5" × 3": portrait ("1x2") or landscape ("2x1")
+  const modern = true
   const base: LabelDesign = {
     backgroundColor: hex(d.backgroundColor, modern ? "#FFFFFF" : "#0A0A0A"),
     borderColor: hex(d.borderColor, modern ? "#D2D2D6" : "#FFE100"),
     logoUrl: null,
     businessName: text(d.businessName, ""),
     tagline: text(d.tagline, DEFAULT_TAGLINE),
-    labelSize: modern || d.labelSize === "2inch" || d.labelSize === "4inch" ? d.labelSize! : "3inch",
+    labelSize: d.labelSize === "2x1" ? "2x1" : "1x2",
     shape: d.shape === "circle" || d.shape === "square" ? d.shape : "rounded-rect",
   }
   if (!modern) return base

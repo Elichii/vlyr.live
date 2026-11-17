@@ -2,35 +2,13 @@
  * Fill a merchant's Business Profile from their verified Google business
  * (server-only).
  *
- * Copies address, business phone, website, map location, category, rating and
- * a photo. Fields the merchant already filled in are never overwritten unless
- * `overwrite` is set (the "Refresh from Google" button).
- *
- * The Google photo is downloaded here and stored in our "logos" bucket, so the
- * Google API key never reaches the browser.
+ * Copies address, business phone, website, map location, category and the
+ * Google rating. Fields the merchant already filled in are never overwritten
+ * unless `overwrite` is set (the "Refresh from Google" button).
  */
 import { createAdminClient } from "@/lib/supabase/admin"
+import { categoryFromTypes } from "@/lib/google/categories"
 
-const CATEGORY_MAP: Record<string, string> = {
-  restaurant: "Restaurant / Cafe",
-  cafe: "Restaurant / Cafe",
-  bakery: "Restaurant / Cafe",
-  bar: "Restaurant / Cafe",
-  meal_takeaway: "Restaurant / Cafe",
-  meal_delivery: "Restaurant / Cafe",
-  food: "Restaurant / Cafe",
-  laundry: "Dry Cleaning / Laundry",
-  hair_care: "Barbershop / Salon",
-  beauty_salon: "Barbershop / Salon",
-  car_repair: "Auto Repair / Detailing",
-  car_wash: "Auto Repair / Detailing",
-  store: "Retail Store",
-  clothing_store: "Retail Store",
-  dentist: "Medical / Dental",
-  doctor: "Medical / Dental",
-  gym: "Fitness / Gym",
-  lodging: "Hotel / Hospitality",
-}
 
 interface PlaceDetails {
   name?: string
@@ -58,29 +36,6 @@ async function fetchPlace(placeId: string): Promise<PlaceDetails | null> {
   const res = await fetch(url, { cache: "no-store" })
   const data = await res.json().catch(() => null)
   return data?.status === "OK" ? (data.result as PlaceDetails) : null
-}
-
-/** Download the business's first Google photo and store it as their logo. */
-async function storeGooglePhoto(merchantId: string, photoReference: string): Promise<string | null> {
-  const key = process.env.GOOGLE_PLACES_API_KEY
-  if (!key) return null
-  const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photo_reference=${encodeURIComponent(photoReference)}&key=${key}`
-  const res = await fetch(url, { redirect: "follow", cache: "no-store" })
-  const type = res.headers.get("content-type") ?? ""
-  if (!res.ok || !type.startsWith("image/")) return null
-  const bytes = Buffer.from(await res.arrayBuffer())
-  if (bytes.length > 5_000_000) return null
-
-  const admin = createAdminClient()
-  const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg"
-  const path = `${merchantId}/google-photo.${ext}`
-  const { error } = await admin.storage.from("logos").upload(path, bytes, { upsert: true, contentType: type })
-  if (error) {
-    console.error("[profile-sync] photo upload failed:", error.message)
-    return null
-  }
-  const { data } = admin.storage.from("logos").getPublicUrl(path)
-  return `${data.publicUrl}?v=${Date.now()}`
 }
 
 export interface SyncResult {
@@ -116,14 +71,12 @@ export async function syncProfileFromGoogle(merchantId: string, opts: { overwrit
     update.lat = place.geometry.location.lat
     update.lng = place.geometry.location.lng
   }
-  const category = (place.types ?? []).map((t) => CATEGORY_MAP[t]).find(Boolean)
+  const category = categoryFromTypes(place.types)
   if (category && fill(m.business_category)) update.business_category = category
   if (typeof place.rating === "number") update.google_rating = place.rating
   if (typeof place.user_ratings_total === "number") update.google_review_count = place.user_ratings_total
-  if (place.photos?.[0]?.photo_reference && fill(m.logo_url)) {
-    const logo = await storeGooglePhoto(merchantId, place.photos[0].photo_reference)
-    if (logo) update.logo_url = logo
-  }
+  // The logo comes only from the owner's Business Profile logo (see
+  // /api/google/claim). A random Google photo would look wrong on stickers.
 
   if (Object.keys(update).length) {
     const { error } = await admin.from("merchants").update(update).eq("id", merchantId)

@@ -9,6 +9,7 @@ import {
   Star, Plus, Trash2, Link2,
 } from "lucide-react"
 import { GoogleBusinessCard } from "@/components/google-business-card"
+import { OwnerDetailsCard } from "@/components/owner-details-card"
 import { VLYRLoader, VLYRInlineLoader } from "@/components/vlyr-loader"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -345,7 +346,7 @@ export default function ProfilePage() {
       const { error } = await supabase.from("merchants").update({
         business_name: businessName,
         business_category: businessCategory,
-        phone,
+        // The manager's mobile is edited in "Your details" (OwnerDetailsCard)
         address,
         google_phone: businessPhone || null,
         google_website: website || null,
@@ -373,11 +374,13 @@ export default function ProfilePage() {
   if (isLoading) return <VLYRLoader variant="card" message="Loading your profile..." />
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6 max-w-3xl">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground tracking-tight">Business Profile</h1>
-        <p className="text-sm text-muted-foreground mt-1">Update your business details, location, and review pages</p>
+        <p className="text-sm text-muted-foreground mt-1">Update your business details, location, review pages and your own details</p>
       </div>
+      <div className="grid xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
+      <div className="flex flex-col gap-6 min-w-0">
 
       {/* Logo + Name Card */}
       <div className="bg-card rounded-2xl border border-border p-6">
@@ -432,10 +435,6 @@ export default function ProfilePage() {
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Website</label>
                 <Input value={website} onChange={(e) => setWebsite(e.target.value.trim())} placeholder="https://yourbusiness.com" className="h-11 bg-secondary/50 border-border rounded-xl" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Your mobile (for alerts, not public)</label>
-                <Input value={phone} onChange={(e) => setPhone(onlyPhoneChars(e.target.value))} inputMode="tel" placeholder="+1 (555) 000-0000" className="h-11 bg-secondary/50 border-border rounded-xl" />
               </div>
             </div>
             {profile?.google_ownership_verified && (
@@ -681,7 +680,12 @@ export default function ProfilePage() {
         </Button>
         {saved && <span className="text-xs text-green-500 font-medium">Profile updated successfully</span>}
       </div>
+      </div>
 
+      <aside className="xl:sticky xl:top-8">
+        <OwnerDetailsCard />
+      </aside>
+      </div>
     </motion.div>
   )
 }

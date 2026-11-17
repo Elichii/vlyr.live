@@ -3,11 +3,14 @@
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Star, Send, Check, Phone, MessageSquare, Mail } from "lucide-react"
+import { PhoneVerifyField } from "@/components/phone-verify-field"
 
 export interface PulseResult {
   rating: number
   feedback?: string
   phone?: string
+  /** The texted-code confirmation for `phone` */
+  phoneVerificationId?: string
   contactPreference?: "call" | "text" | "email"
 }
 
@@ -17,6 +20,10 @@ interface PulseCheckProps {
   customerEmail?: string
   submitting: boolean
   onSubmit: (result: PulseResult) => void
+  /** The sticker being rated (needed to text a confirmation code) */
+  stickerCode?: string
+  /** Phone numbers must be confirmed with a texted code */
+  phoneVerification?: boolean
 }
 
 /** Star rating + comment. Saving and what happens next is up to the parent. */
@@ -26,14 +33,23 @@ const CONTACT_OPTIONS = [
   { id: "email" as const, label: "Email me", icon: Mail },
 ]
 
-export function PulseCheck({ merchantName, customerEmail, submitting, onSubmit }: PulseCheckProps) {
+export function PulseCheck({ merchantName, customerEmail, submitting, onSubmit, stickerCode, phoneVerification = false }: PulseCheckProps) {
   const [selectedRating, setSelectedRating] = useState<number | null>(null)
   const [hoveredRating, setHoveredRating] = useState<number | null>(null)
   const [feedback, setFeedback] = useState("")
   const [phone, setPhone] = useState("")
   const [contact, setContact] = useState<"call" | "text" | "email">("text")
   const needsPhone = contact === "call" || contact === "text"
-  const phoneOk = phone.replace(/\D/g, "").length >= 7
+  const [verificationId, setVerificationId] = useState<string | null>(null)
+  const [confirmedPhone, setConfirmedPhone] = useState<string | null>(null)
+  const phoneOk = phoneVerification ? !!confirmedPhone : phone.replace(/\D/g, "").length >= 7
+
+  const phoneApi = async (body: Record<string, unknown>) => {
+    const res = await fetch("/api/pulse/phone", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error ?? "Something went wrong.")
+    return json
+  }
 
   const activeRating = hoveredRating ?? selectedRating
   const isPositive = selectedRating !== null && selectedRating >= 4
@@ -140,7 +156,24 @@ export function PulseCheck({ merchantName, customerEmail, submitting, onSubmit }
                   </button>
                 ))}
               </div>
-              {needsPhone ? (
+              {needsPhone && phoneVerification ? (
+                <>
+                  <PhoneVerifyField
+                    tone="app"
+                    value={phone}
+                    onChange={setPhone}
+                    confirmed={confirmedPhone}
+                    onConfirmed={(p) => { setConfirmedPhone(p); if (!p) setVerificationId(null) }}
+                    placeholder="Your mobile number"
+                    send={async (p) => { const j = await phoneApi({ action: "send", code: stickerCode, phone: p }); setVerificationId(j.verificationId); return { sentTo: j.sentTo } }}
+                    confirm={async (otp) => { const j = await phoneApi({ action: "verify", verificationId, otp }); return { phone: j.phone } }}
+                    inputClassName="bg-card border border-border text-foreground placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-foreground/20"
+                  />
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    We&apos;ll text you a one-time code to confirm it&apos;s your number. {merchantName} will only use it to reach you about this order. Msg &amp; data rates may apply.
+                  </p>
+                </>
+              ) : needsPhone ? (
                 <input
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -162,6 +195,7 @@ export function PulseCheck({ merchantName, customerEmail, submitting, onSubmit }
                   rating: selectedRating!,
                   feedback: feedback.trim(),
                   phone: needsPhone ? phone.trim() : undefined,
+                  phoneVerificationId: needsPhone && verificationId ? verificationId : undefined,
                   contactPreference: contact,
                 })
               }

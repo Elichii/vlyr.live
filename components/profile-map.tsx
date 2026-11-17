@@ -77,7 +77,7 @@ export default function ProfileMap({
       )}
 
       {/* Pin mode toggle */}
-      {!pinMode && (
+      {!pinMode && onMapClick && (
         <button
           type="button"
           onClick={() => setPinMode(true)}

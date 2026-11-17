@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
-  Mail, Lock, Phone, ArrowRight, ArrowLeft,
-  Eye, EyeOff, ShieldCheck, CheckCircle2, AlertCircle, User,
+  Mail, Lock, ArrowRight, ArrowLeft,
+  Eye, EyeOff, ShieldCheck, CheckCircle2, AlertCircle,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { createClient } from "@/lib/supabase/client"
@@ -67,7 +67,7 @@ export function StepAuth({ data, onChange, onNext, onBack }: StepAuthProps) {
   const strength = useMemo(() => getPasswordStrength(data.password), [data.password])
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)
 
-  const canProceed = isEmailValid && data.username.length >= 3 && data.password.length >= 6
+  const canProceed = isEmailValid && data.password.length >= 6
 
   const handleSignUp = useCallback(async () => {
     if (!canProceed) return
@@ -75,8 +75,8 @@ export function StepAuth({ data, onChange, onNext, onBack }: StepAuthProps) {
     setAuthError(null)
     try {
       const result = await serverSignUp({
-        email: data.email, password: data.password, username: data.username,
-        phone: data.phone, packageId: data.packageId || "starter", billingCycle: data.billingCycle || "monthly",
+        email: data.email, password: data.password, username: data.email.split("@")[0],
+        phone: "", packageId: data.packageId || "starter", billingCycle: data.billingCycle || "monthly",
       })
       if (!result.success || !result.userId) {
         setAuthError(result.error ?? "Account creation failed. Please try again.")
@@ -169,27 +169,6 @@ export function StepAuth({ data, onChange, onNext, onBack }: StepAuthProps) {
           )}
         </div>
 
-        {/* Username */}
-        <div className="flex flex-col gap-1.5">
-          <FieldLabel>Username</FieldLabel>
-          <div className="relative">
-            <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#AAAAAA]" />
-            <Input
-              type="text" placeholder="Choose a username"
-              value={data.username} onChange={(e) => onChange({ username: e.target.value })}
-              className="pl-10 h-12 rounded-xl bg-[#FAFAFA] border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:ring-1 focus-visible:ring-[#0A0A0A]/20 focus-visible:border-[#0A0A0A]"
-            />
-            {data.username.length >= 3 && (
-              <CheckCircle2 size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#16a34a]" />
-            )}
-          </div>
-          {data.username.length > 0 && data.username.length < 3 && (
-            <p className="text-xs text-red-500 flex items-center gap-1">
-              <AlertCircle size={10} /> At least 3 characters
-            </p>
-          )}
-        </div>
-
         {/* Password */}
         <div className="flex flex-col gap-1.5">
           <FieldLabel>Password</FieldLabel>
@@ -216,26 +195,6 @@ export function StepAuth({ data, onChange, onNext, onBack }: StepAuthProps) {
             </motion.div>
           )}
         </div>
-      </div>
-
-      {/* ── Phone (optional) ─────────────────────────────────────── */}
-      <div className="flex flex-col gap-1.5">
-        <FieldLabel>Phone number <span className="normal-case font-normal tracking-normal text-[#8C8C8C]">(optional)</span></FieldLabel>
-        <div className="relative">
-          <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#AAAAAA]" />
-          <Input
-            type="tel" placeholder="+1 (555) 000-0000" autoComplete="tel"
-            value={data.phone} onChange={(e) => onChange({ phone: e.target.value.replace(/[^\d+()\-\s.]/g, "").slice(0, 25) })}
-            className="pl-10 h-12 rounded-xl bg-[#FAFAFA] border-[#E5E5E5] text-[#0A0A0A] placeholder:text-[#AAAAAA] focus-visible:ring-1 focus-visible:ring-[#0A0A0A]/20 focus-visible:border-[#0A0A0A]"
-          />
-        </div>
-        <p className="text-xs text-[#595959] leading-relaxed">
-          By entering your mobile number, you consent to receive account verification and automated feedback alert SMS
-          messages from VLYR (operated by Mare LLC). Consent is not a condition of purchase. Msg frequency varies based on
-          feedback activity. Msg &amp; data rates may apply. Reply STOP to cancel at any time, or HELP for support. View{" "}
-          <a href="/privacy" className="underline hover:text-[#0A0A0A]" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and{" "}
-          <a href="/terms" className="underline hover:text-[#0A0A0A]" target="_blank" rel="noopener noreferrer">Terms</a>.
-        </p>
       </div>
 
       {/* ── Trust strip ─────────────────────────────────────────── */}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { SIGNUP_NONCE_COOKIE, encodeSignupState } from "@/lib/google-signup"
+import { PLAN_NOT_CHOSEN, SIGNUP_NONCE_COOKIE, encodeSignupState } from "@/lib/google-signup"
 import { publicOrigin } from "@/lib/public-origin"
 
 /**
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   const nonce = crypto.randomUUID()
   const state = isSignup
     ? encodeSignupState({
-        plan: searchParams.get("plan") || "free",
+        plan: searchParams.get("plan") || PLAN_NOT_CHOSEN,
         cycle: searchParams.get("cycle") === "annual" ? "annual" : "monthly",
         ref: (searchParams.get("ref") || "").slice(0, 64),
         nonce,

@@ -20,6 +20,10 @@ interface Reward {
 }
 
 interface Info {
+  /** false: the business no longer uses VLYR */
+  active?: boolean
+  /** Phone numbers must be confirmed with a texted code */
+  phoneVerification?: boolean
   businessName: string
   reviewUrl: string | null
   rewardOffer: string | null
@@ -31,7 +35,7 @@ interface Info {
   myRating: number | null
 }
 
-type Screen = "loading" | "no-code" | "unknown" | "sign-in" | "rate" | "done" | "used"
+type Screen = "loading" | "no-code" | "unknown" | "inactive" | "sign-in" | "rate" | "done" | "used"
 
 const SIGN_IN_ERRORS: Record<string, string> = {
   sign_in_cancelled: "Sign-in was cancelled. Please try again to leave your rating.",
@@ -91,7 +95,9 @@ function PulseContent() {
         const data: Info = await res.json()
         if (cancelled) return
         setInfo(data)
-        if (data.used) {
+        if (data.active === false) {
+          setScreen("inactive")
+        } else if (data.used) {
           setReward(data.reward)
           setRating(data.myRating)
           setScreen("used")
@@ -164,8 +170,14 @@ function PulseContent() {
               )}
 
               {screen === "unknown" && (
-                <Message icon={<ShieldCheck size={28} className="text-accent" />} title="This code isn't active">
-                  The sticker may be damaged or not set up yet. Please let the staff know.
+                <Message icon={<ShieldCheck size={28} className="text-accent" />} title="This sticker isn't active">
+                  It may have been replaced or switched off by the business. If you&apos;d like to share feedback, please let the staff know in person.
+                </Message>
+              )}
+
+              {screen === "inactive" && (
+                <Message icon={<ShieldCheck size={28} className="text-accent" />} title={`${name} isn't collecting feedback here right now`}>
+                  This sticker is no longer active, so nothing was sent. If you&apos;d like to share feedback, please speak to the team directly. Thank you for scanning.
                 </Message>
               )}
 
@@ -208,7 +220,7 @@ function PulseContent() {
                       <Gift size={13} className="text-accent" /> Rate to unlock: {info.rewardOffer}
                     </p>
                   )}
-                  <PulseCheck merchantName={name} customerEmail={info?.customer?.email} submitting={submitting} onSubmit={handleSubmit} />
+                  <PulseCheck merchantName={name} customerEmail={info?.customer?.email} submitting={submitting} onSubmit={handleSubmit} stickerCode={code ?? undefined} phoneVerification={!!info?.phoneVerification} />
                   <button
                     type="button"
                     onClick={toggleLocation}

@@ -1,40 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { categoryFromTypes } from "@/lib/google/categories"
 
-const CATEGORY_MAP: Record<string, string> = {
-  restaurant: "Restaurant / Cafe",
-  cafe: "Restaurant / Cafe",
-  food: "Restaurant / Cafe",
-  bar: "Restaurant / Cafe",
-  bakery: "Restaurant / Cafe",
-  lodging: "Hotel / Hospitality",
-  hotel: "Hotel / Hospitality",
-  store: "Retail Store",
-  shopping_mall: "Retail Store",
-  clothing_store: "Retail Store",
-  shoe_store: "Retail Store",
-  jewelry_store: "Retail Store",
-  beauty_salon: "Salon / Spa",
-  hair_care: "Salon / Spa",
-  spa: "Salon / Spa",
-  gym: "Fitness / Gym",
-  health: "Healthcare",
-  hospital: "Healthcare",
-  doctor: "Healthcare",
-  dentist: "Healthcare",
-  pharmacy: "Healthcare",
-  car_dealer: "Auto Services",
-  car_repair: "Auto Services",
-  car_wash: "Auto Services",
-  real_estate_agency: "Real Estate",
-  lawyer: "Professional Services",
-  accounting: "Professional Services",
-  insurance_agency: "Professional Services",
-  bank: "Professional Services",
-  finance: "Professional Services",
-  laundry: "Laundry / Dry Cleaning",
-  dry_cleaner: "Laundry / Dry Cleaning",
-}
 
 interface PlaceReview {
   author_name?: string
@@ -82,10 +48,7 @@ async function fetchFullPlaceDetails(placeId: string, apiKey: string) {
 }
 
 function shapePlaceResult(place: PlaceResult, apiKey: string) {
-  let businessCategory = "Other"
-  for (const type of place.types ?? []) {
-    if (CATEGORY_MAP[type]) { businessCategory = CATEGORY_MAP[type]; break }
-  }
+  const businessCategory = categoryFromTypes(place.types) ?? "Other"
 
   // The photo is downloaded and stored server-side after verification
   // (lib/google/profile-sync.ts). Never build a photo URL here: it would
@@ -256,35 +219,9 @@ export async function POST(request: NextRequest) {
 
     const result = shapePlaceResult(place, GOOGLE_PLACES_API_KEY)
 
-    // Step 4: Save to database if user is authenticated
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    // Look-up only: nothing is saved here. A business is connected only after
+    // Google confirms the signed-in account manages it (/api/google/claim).
 
-    if (user) {
-      await supabase.from("merchants").update({
-        google_connected: true,
-        google_location_id: result.placeId,
-        google_account_name: result.businessName,
-        business_name: result.businessName,
-        business_category: result.category,
-      }).eq("id", user.id)
-
-      const { data: existingLink } = await supabase
-        .from("review_links")
-        .select("id")
-        .eq("merchant_id", user.id)
-        .eq("platform", "google")
-        .single()
-
-      if (!existingLink) {
-        await supabase.from("review_links").insert({
-          merchant_id: user.id,
-          platform: "google",
-          url: result.reviewUrl,
-          label: "Google Reviews",
-        })
-      }
-    }
 
     return NextResponse.json(result)
   } catch (error) {

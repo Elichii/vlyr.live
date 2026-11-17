@@ -97,8 +97,8 @@ export function StepFreeSuccess({ data, onGoToDashboard }: StepFreeSuccessProps)
           {data.businessName ? `${data.businessName} is ready` : "You're all set"}
         </h2>
         <p className="text-sm text-[#595959] max-w-sm leading-relaxed">
-          Your free trial includes {FREE_STICKER_LIMIT} QR stickers. Each one has its own number, so you can see which box every
-          customer scanned.
+          Your free trial includes {FREE_STICKER_LIMIT} QR stickers. Each one has its own QR code, so every
+          rating is tied to one box.
         </p>
       </div>
 

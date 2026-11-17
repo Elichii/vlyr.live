@@ -14,7 +14,7 @@ export interface LabelDesign {
   /**
    * "vlyr" = the standard VLYR sticker (2.5" × 4.29", the approved design;
    * the only one on the free trial).
-   * "1x2" = portrait 1" wide × 2" tall, "2x1" = landscape 2" × 1" (the modern
+   * "1x2" = portrait 1.5" wide × 3" tall, "2x1" = landscape 3" × 1.5" (the modern
    * sticker). "2inch" | "3inch" | "4inch" are the original square/round
    * stickers, kept so older sheets reprint unchanged.
    */

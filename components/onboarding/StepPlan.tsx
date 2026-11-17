@@ -6,7 +6,7 @@ import { motion } from "framer-motion"
 import { Check, Minus, ArrowRight, ShieldCheck, Sparkles, Building2, Star, Gift } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { OnboardingData } from "@/lib/onboarding-types"
-import { PACKAGES, PLAN_FEATURES } from "@/lib/onboarding-types"
+import { PACKAGES, PLAN_FEATURES, isFreePlan } from "@/lib/onboarding-types"
 
 interface StepPlanProps {
   data: OnboardingData
@@ -189,15 +189,8 @@ export function StepPlan({ data, onChange, onNext }: StepPlanProps) {
       {/* Social proof */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
         className="flex items-center gap-4 p-4 rounded-2xl bg-[#FAFAFA] border border-[#EBEBEB]">
-        <div className="flex -space-x-2 shrink-0">
-          {["M", "J", "A", "R"].map((l, i) => (
-            <div key={i} className="w-7 h-7 rounded-full bg-[#E5E5E5] border-2 border-white flex items-center justify-center">
-              <span className="text-xs font-bold text-[#666666]">{l}</span>
-            </div>
-          ))}
-        </div>
         <p className="text-sm text-[#666666] leading-snug flex-1">
-          <span className="text-[#0A0A0A] font-semibold">Marco, Jen, Amara +2,397</span> business owners protect their rating with VLYR today.
+          Join our founding cohort of local businesses protecting their Google reputation.
         </p>
         <div className="flex shrink-0">
           {[1, 2, 3, 4, 5].map((s) => <Star key={s} size={11} className="fill-[#FFE100] text-[#FFE100]" />)}
@@ -209,7 +202,7 @@ export function StepPlan({ data, onChange, onNext }: StepPlanProps) {
         <ArrowRight size={16} />
       </Button>
 
-      <p className="text-center text-xs text-[#AAAAAA]">No credit card required · Cancel anytime</p>
+      <p className="text-center text-xs text-[#AAAAAA]">{isFreePlan(data.packageId) ? "No credit card required" : "Cancel anytime"}</p>
     </motion.div>
   )
 }

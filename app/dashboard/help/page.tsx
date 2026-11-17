@@ -1,544 +1,418 @@
 "use client"
 
-import { useState, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+/**
+ * Help Center: a step-by-step guide, topics with full articles, a searchable
+ * FAQ and contact options. Content lives in lib/help-content.ts.
+ * Deep links: /dashboard/help?article=<id> or ?topic=<id>.
+ */
+import { Suspense, useMemo, useState } from "react"
+import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
+import { AnimatePresence, motion } from "framer-motion"
 import {
-  Search, ShieldCheck, QrCode, BarChart3, ShoppingCart, User,
-  Star, Zap, MessageSquare, ChevronRight, ExternalLink, Mail,
-  BookOpen, ArrowRight, Clock, CheckCircle2,
+  ArrowLeft, ArrowRight, BellRing, Building2, Check, ChevronDown, ChevronRight, Clock, CreditCard, Gift, Inbox,
+  Lightbulb, Lock, Mail, MapPin, Rocket, Search, Star, Sticker, ThumbsDown, ThumbsUp, Wrench, X, Info,
 } from "lucide-react"
-import { Input } from "@/components/ui/input"
+import { FAQ, GUIDE, SUPPORT_EMAIL, TOPICS, type Article, type Block, type Topic } from "@/lib/help-content"
 
-// ── Article Type ─────────────────────────────────────────────────────
-interface Article {
-  id: string
-  title: string
-  summary: string
-  content: string[]
-  readTime: string
+const ICONS: Record<Topic["icon"], React.ElementType> = {
+  rocket: Rocket, sticker: Sticker, star: Star, inbox: Inbox, bell: BellRing, google: Star, gift: Gift,
+  map: MapPin, building: Building2, card: CreditCard, lock: Lock, wrench: Wrench,
 }
 
-interface Category {
-  id: string
-  icon: React.ElementType
-  label: string
-  description: string
-  articles: Article[]
-}
+const ALL_ARTICLES = TOPICS.flatMap((t) => t.articles.map((a) => ({ ...a, topic: t })))
+const findArticle = (id: string | null) => ALL_ARTICLES.find((a) => a.id === id) ?? null
 
-const CATEGORIES: Category[] = [
-  {
-    id: "getting-started",
-    icon: ShieldCheck,
-    label: "Getting Started",
-    description: "Learn the basics of VLYR and your Reputation Shield",
-    articles: [
-      {
-        id: "what-is-vlyr",
-        title: "What is VLYR?",
-        summary: "Smart QR codes that capture real-time customer feedback and protect your online reputation.",
-        readTime: "3 min",
-        content: [
-          "VLYR is a reputation management platform built for local businesses. We give you smart QR codes that capture real-time customer feedback.",
-          "Happy customers (4-5 stars) are routed to leave a Google Review, while unhappy customers (1-3 stars) are handled privately so you can resolve issues before they go public.",
-          "This \"Reputation Shield\" protects your online ratings while giving you honest feedback to improve your business operations.",
-        ],
-      },
-      {
-        id: "first-steps",
-        title: "Your first 10 minutes with VLYR",
-        summary: "A quick walkthrough of setup, placing your first QR sticker, and reading your first scan.",
-        readTime: "5 min",
-        content: [
-          "Step 1: Complete your Business Profile with your name, logo, and address. This information appears on your customer-facing Pulse Check page.",
-          "Step 2: Add your review links (Google, Yelp, Facebook) and mark one as primary. Happy customers will be directed to this link.",
-          "Step 3: Place your QR stickers on high-traffic surfaces: takeaway boxes, receipts, counter stands, or windows.",
-          "Step 4: Watch scans roll into your Command Center dashboard. Each scan shows the customer rating, feedback, and location data.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "qr-codes",
-    icon: QrCode,
-    label: "QR Codes",
-    description: "How scanning, routing, and tracking work",
-    articles: [
-      {
-        id: "how-qr-works",
-        title: "How do the QR Codes work?",
-        summary: "Each QR code links to your personalized VLYR Pulse Check page with smart routing.",
-        readTime: "4 min",
-        content: [
-          "Each QR code links to your personalized VLYR Pulse Check page. When a customer scans, they see a simple star rating prompt.",
-          "4-5 Stars: They are directed to leave a review on your primary review page (Google, Yelp, Facebook, or any custom URL you configure).",
-          "1-3 Stars: They are shown a private feedback form that sends responses directly to your dashboard, keeping negative feedback off public platforms.",
-          "You can customize which review platform is used by setting your primary review link in your Business Profile under the Review Links section.",
-        ],
-      },
-      {
-        id: "where-to-place",
-        title: "Best places to put your QR stickers",
-        summary: "Maximize scans with strategic sticker placement.",
-        readTime: "2 min",
-        content: [
-          "Takeaway boxes and bags: Customers scan after experiencing your product at home.",
-          "Counter tops and register areas: Capture feedback at the point of sale.",
-          "Receipts and invoices: Professional touchpoint for service-based businesses.",
-          "Window decals: Attract foot traffic and signal you care about feedback.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "dashboard",
-    icon: BarChart3,
-    label: "Command Center",
-    description: "Navigate your analytics dashboard",
-    articles: [
-      {
-        id: "overview-metrics",
-        title: "Understanding your metrics",
-        summary: "Total scans, average rating, review count, and trends at a glance.",
-        readTime: "3 min",
-        content: [
-          "The Overview tab shows your key metrics: total scans, average rating, positive review conversion rate, and scan trends over time.",
-          "The rating distribution chart breaks down your feedback by star count so you can see the full picture.",
-          "Scan source tracking tells you which QR code locations generate the most engagement.",
-          "Use the date filter to compare performance across different time periods.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "supply",
-    icon: ShoppingCart,
-    label: "Supply Shop",
-    description: "Order and reorder supplies",
-    articles: [
-      {
-        id: "ordering-supplies",
-        title: "How to order supplies",
-        summary: "Add items, customize labels, and checkout with one flow.",
-        readTime: "3 min",
-        content: [
-          "Visit the Supply Shop from the sidebar. Add QR Sticker Rolls, Acrylic Stands, or Window Decals to your cart.",
-          "When QR Sticker Rolls are in your cart, you will be taken to the Print Studio to customize your label design before checkout.",
-          "Choose from preset color themes or create a custom design with your brand colors, logo, and tagline.",
-          "After designing, proceed to the secure checkout to complete your payment. All orders appear in your Order History.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "profile",
-    icon: User,
-    label: "Business Profile",
-    description: "Manage your identity and review links",
-    articles: [
-      {
-        id: "setup-profile",
-        title: "Setting up your Business Profile",
-        summary: "Logo, address, Google Maps pin, review links, and bio.",
-        readTime: "4 min",
-        content: [
-          "Logo: Click the upload area to add your business logo. This appears on your Pulse Check page and QR labels.",
-          "Business Name & Address: These are displayed to customers when they scan your QR code.",
-          "Pin Location: Use the Google Maps embed to search for your business or drop a pin. This enables proximity tracking for scan analytics.",
-          "Review Links: Add multiple review platform URLs (Google, Yelp, Facebook, custom). Mark one as primary - this is where happy customers get directed after scanning.",
-          "Bio: A short description that appears on your public-facing Pulse Check page.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "plans",
-    icon: Star,
-    label: "Plans & Billing",
-    description: "Pricing tiers and billing details",
-    articles: [
-      {
-        id: "plan-comparison",
-        title: "Plans comparison",
-        summary: "Starter, Growth, and Enterprise - find the right fit.",
-        readTime: "2 min",
-        content: [
-          "Starter ($49/mo): 500 QR stickers, basic analytics, email support. Great for getting started.",
-          "Growth ($99/mo): 2,000 QR stickers, advanced analytics, priority support, Burn-Code Rewards. Best value for growing businesses.",
-          "Enterprise ($249/mo): 5,000 QR stickers, white-label branding, dedicated account manager, API access, SLA guarantee.",
-          "All plans include free shipping on hardware. Annual billing saves 20%. You can switch plans anytime.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "burncode",
-    icon: Zap,
-    label: "Burn-Code Rewards",
-    description: "Instant vouchers that drive repeat visits",
-    articles: [
-      {
-        id: "how-burncode",
-        title: "How Burn-Code Rewards work",
-        summary: "Generate instant discount vouchers when customers leave positive reviews.",
-        readTime: "3 min",
-        content: [
-          "Available on Growth and Enterprise plans, Burn-Code Rewards are instant discount vouchers generated when a customer leaves a positive review.",
-          "After leaving a 4 or 5-star review, the customer sees a limited-time voucher with a countdown timer (default: 60 minutes).",
-          "The urgency of the expiring voucher encourages them to visit again immediately, driving repeat traffic and loyalty.",
-          "You control the discount amount, terms, and expiry time from the Command Center settings.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "support",
-    icon: MessageSquare,
-    label: "Contact Support",
-    description: "Get help from the VLYR team",
-    articles: [
-      {
-        id: "contact-info",
-        title: "Getting help",
-        summary: "Email support with response times based on your plan tier.",
-        readTime: "1 min",
-        content: [
-          "Email: support@vlyr.com for general inquiries.",
-          "Response times: Within 24 hours (Starter), 4 hours (Growth), 1 hour (Enterprise).",
-          "For urgent issues (site down, billing errors): email urgent@vlyr.com with your business name.",
-          "This help center covers all common topics. Search above to find answers quickly.",
-        ],
-      },
-    ],
-  },
-]
-
-// ── Component ────────────────────────────────────────────────────────
 export default function HelpPage() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null)
+  return (
+    <Suspense fallback={null}>
+      <HelpCenter />
+    </Suspense>
+  )
+}
 
-  // Filter articles by search
-  const filteredCategories = useMemo(() => {
-    if (!searchQuery.trim()) return CATEGORIES
-    const q = searchQuery.toLowerCase()
-    return CATEGORIES.map((cat) => ({
-      ...cat,
-      articles: cat.articles.filter(
-        (a) =>
-          a.title.toLowerCase().includes(q) ||
-          a.summary.toLowerCase().includes(q) ||
-          a.content.some((p) => p.toLowerCase().includes(q)),
-      ),
-    })).filter((cat) => cat.articles.length > 0)
-  }, [searchQuery])
+function HelpCenter() {
+  const router = useRouter()
+  const params = useSearchParams()
+  const article = findArticle(params.get("article"))
+  const topic = TOPICS.find((t) => t.id === params.get("topic")) ?? null
+  const go = (q: string) => { router.push(`/dashboard/help${q}`); window.scrollTo({ top: 0 }) }
 
-  const activeCategory = selectedCategory
-    ? filteredCategories.find((c) => c.id === selectedCategory) ?? null
-    : null
+  if (article) return <ArticleView article={article} topic={article.topic} go={go} />
+  if (topic) return <TopicView topic={topic} go={go} />
+  return <Home go={go} />
+}
+
+/* ── Home ─────────────────────────────────────────────────────────── */
+
+function Home({ go }: { go: (q: string) => void }) {
+  const [query, setQuery] = useState("")
+  const q = query.trim().toLowerCase()
+  const results = useMemo(() => {
+    if (q.length < 2) return null
+    const words = q.split(/\s+/)
+    const hit = (s: string) => words.every((w) => s.toLowerCase().includes(w))
+    return {
+      articles: ALL_ARTICLES.filter((a) => hit([a.title, a.summary, ...a.body.map(blockText)].join(" "))).slice(0, 8),
+      faq: FAQ.filter((f) => hit(f.q + " " + f.a)).slice(0, 6),
+    }
+  }, [q])
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col gap-8 max-w-4xl"
-    >
-      {/* Hero Header */}
-      <div className="text-center space-y-3 pt-2">
-        <div className="flex items-center justify-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-[#FFE100]/10 border border-[#FFE100]/20 flex items-center justify-center">
-            <BookOpen size={20} className="text-[#FFE100]" />
-          </div>
-        </div>
-        <h1 className="text-3xl font-bold text-foreground tracking-tight text-balance">
-          How can we help?
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-          Search our knowledge base or browse topics below to get the most out of VLYR.
-        </p>
-
-        {/* Search Bar */}
-        <div className="relative max-w-lg mx-auto mt-4">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value)
-              setSelectedCategory(null)
-              setSelectedArticle(null)
-            }}
-            placeholder="Search articles, topics, features..."
-            className="h-12 pl-11 pr-4 bg-card border-border rounded-2xl text-sm placeholder:text-muted-foreground/50"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-
-      <AnimatePresence mode="wait">
-        {/* ── Article Detail View ───────────────────────────── */}
-        {selectedArticle ? (
-          <motion.div
-            key="article"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-6"
-          >
-            {/* Breadcrumb */}
-            <button
-              onClick={() => setSelectedArticle(null)}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#FFE100] transition-colors"
-            >
-              <ChevronRight size={12} className="rotate-180" />
-              Back to {activeCategory?.label ?? "articles"}
-            </button>
-
-            {/* Article Card */}
-            <div className="bg-card rounded-2xl border border-border p-8 space-y-6">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[10px] font-medium text-[#FFE100] bg-[#FFE100]/10 border border-[#FFE100]/20 px-2 py-0.5 rounded-full">
-                    {activeCategory?.label}
-                  </span>
-                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <Clock size={10} /> {selectedArticle.readTime} read
-                  </span>
-                </div>
-                <h2 className="text-xl font-bold text-foreground tracking-tight">
-                  {selectedArticle.title}
-                </h2>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {selectedArticle.summary}
-                </p>
-              </div>
-
-              <div className="h-px bg-border" />
-
-              <div className="space-y-4">
-                {selectedArticle.content.map((paragraph, i) => (
-                  <div key={i} className="flex gap-3">
-                    <div className="mt-1.5 shrink-0">
-                      <CheckCircle2 size={14} className="text-[#FFE100]/60" />
-                    </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {paragraph}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Related help */}
-            {activeCategory && activeCategory.articles.length > 1 && (
-              <div className="space-y-3">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Related Articles
-                </h3>
-                <div className="grid gap-2">
-                  {activeCategory.articles
-                    .filter((a) => a.id !== selectedArticle.id)
-                    .map((article) => (
-                      <button
-                        key={article.id}
-                        onClick={() => setSelectedArticle(article)}
-                        className="text-left bg-card/50 border border-border/50 rounded-xl px-4 py-3 hover:border-[#FFE100]/20 hover:bg-[#FFE100]/5 transition-all flex items-center justify-between gap-3"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{article.title}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{article.summary}</p>
-                        </div>
-                        <ArrowRight size={14} className="text-muted-foreground shrink-0" />
-                      </button>
-                    ))}
-                </div>
-              </div>
+    <div className="flex flex-col gap-16 pb-16">
+      {/* Hero */}
+      <section className="rounded-[32px] bg-[#0A0A0A] text-white px-6 md:px-12 py-14 md:py-20 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.1] pointer-events-none" style={{ backgroundImage: "radial-gradient(#FFE100 1px, transparent 1px)", backgroundSize: "18px 18px" }} />
+        <div className="relative max-w-3xl mx-auto text-center">
+          <p className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[#FFE100]">VLYR Support</p>
+          <h1 className="text-4xl md:text-6xl font-bold tracking-tight mt-4">How can we help?</h1>
+          <div className="relative mt-8">
+            <Search size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#888888]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search for stickers, text alerts, rewards…"
+              className="w-full h-16 rounded-2xl bg-white text-[#0A0A0A] pl-14 pr-12 text-lg placeholder:text-[#9A9A9A] outline-none focus:ring-4 focus:ring-[#FFE100]/40"
+              aria-label="Search help"
+            />
+            {query && (
+              <button onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-4 top-1/2 -translate-y-1/2 text-[#888888] hover:text-[#0A0A0A]"><X size={18} /></button>
             )}
-          </motion.div>
-        ) : selectedCategory && activeCategory ? (
-          /* ── Category Article List ───────────────────────── */
-          <motion.div
-            key="category"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-5"
-          >
-            <button
-              onClick={() => setSelectedCategory(null)}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#FFE100] transition-colors"
-            >
-              <ChevronRight size={12} className="rotate-180" />
-              All topics
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#FFE100]/10 border border-[#FFE100]/20 flex items-center justify-center shrink-0">
-                <activeCategory.icon size={18} className="text-[#FFE100]" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-foreground">{activeCategory.label}</h2>
-                <p className="text-xs text-muted-foreground">{activeCategory.description}</p>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              {activeCategory.articles.map((article) => (
-                <button
-                  key={article.id}
-                  onClick={() => setSelectedArticle(article)}
-                  className="text-left bg-card rounded-2xl border border-border p-5 hover:border-[#FFE100]/20 hover:bg-[#FFE100]/[0.02] transition-all group"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1.5">
-                      <h3 className="text-sm font-semibold text-foreground group-hover:text-[#FFE100] transition-colors">
-                        {article.title}
-                      </h3>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        {article.summary}
-                      </p>
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground/60 mt-2">
-                        <Clock size={10} /> {article.readTime} read
-                      </span>
-                    </div>
-                    <ArrowRight size={16} className="text-muted-foreground/30 group-hover:text-[#FFE100] transition-colors mt-1 shrink-0" />
-                  </div>
-                </button>
+          </div>
+          {!results && (
+            <div className="flex flex-wrap justify-center gap-2 mt-5">
+              {["Print stickers", "Text alerts", "Rewards", "Won't scan"].map((s) => (
+                <button key={s} onClick={() => setQuery(s)} className="text-sm px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-white/85">{s}</button>
               ))}
             </div>
-          </motion.div>
-        ) : (
-          /* ── Category Grid ───────────────────────────────── */
-          <motion.div
-            key="grid"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
-          >
-            {/* Category cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredCategories.map((cat) => {
-                const Icon = cat.icon
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => {
-                      setSelectedCategory(cat.id)
-                      if (cat.articles.length === 1) {
-                        setSelectedArticle(cat.articles[0])
-                      }
-                    }}
-                    className="text-left bg-card rounded-2xl border border-border p-5 hover:border-[#FFE100]/20 hover:bg-[#FFE100]/[0.02] transition-all group"
-                  >
-                    <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-xl bg-[#FFE100]/10 border border-[#FFE100]/20 flex items-center justify-center shrink-0">
-                        <Icon size={16} className="text-[#FFE100]" />
-                      </div>
-                      <div className="min-w-0 space-y-1">
-                        <h3 className="text-sm font-semibold text-foreground group-hover:text-[#FFE100] transition-colors">
-                          {cat.label}
-                        </h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                          {cat.description}
-                        </p>
-                        <span className="text-[10px] text-muted-foreground/50">
-                          {cat.articles.length} {cat.articles.length === 1 ? "article" : "articles"}
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
+          )}
+        </div>
+      </section>
 
-            {/* No results */}
-            {filteredCategories.length === 0 && searchQuery && (
-              <div className="text-center py-12 space-y-2">
-                <Search size={24} className="text-muted-foreground/30 mx-auto" />
-                <p className="text-sm text-muted-foreground">
-                  No results for &ldquo;{searchQuery}&rdquo;
-                </p>
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="text-xs text-[#FFE100] hover:underline underline-offset-4"
-                >
-                  Clear search
-                </button>
-              </div>
-            )}
-
-            {/* Popular Articles */}
-            {!searchQuery && (
-              <div className="space-y-3">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Popular Articles
-                </h3>
-                <div className="grid gap-2">
-                  {[
-                    CATEGORIES[0].articles[0],
-                    CATEGORIES[1].articles[0],
-                    CATEGORIES[4].articles[0],
-                  ].filter(Boolean).map((article) => {
-                    const cat = CATEGORIES.find((c) => c.articles.some((a) => a.id === article.id))
-                    return (
-                      <button
-                        key={article.id}
-                        onClick={() => {
-                          if (cat) setSelectedCategory(cat.id)
-                          setSelectedArticle(article)
-                        }}
-                        className="text-left bg-card/50 border border-border/50 rounded-xl px-4 py-3 hover:border-[#FFE100]/20 hover:bg-[#FFE100]/5 transition-all flex items-center justify-between gap-3 group"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          {cat && (
-                            <div className="w-7 h-7 rounded-lg bg-[#FFE100]/10 flex items-center justify-center shrink-0">
-                              <cat.icon size={12} className="text-[#FFE100]" />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate group-hover:text-[#FFE100] transition-colors">
-                              {article.title}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">{article.summary}</p>
-                          </div>
-                        </div>
-                        <ArrowRight size={14} className="text-muted-foreground/30 group-hover:text-[#FFE100] shrink-0 transition-colors" />
-                      </button>
-                    )
-                  })}
+      {/* Search results */}
+      {results && (
+        <section className="max-w-4xl w-full mx-auto -mt-8">
+          <p className="text-sm text-muted-foreground mb-4">
+            {results.articles.length + results.faq.length === 0 ? `No results for “${query}”. Try different words, or contact us below.` : `Results for “${query}”`}
+          </p>
+          <div className="flex flex-col gap-3">
+            {results.articles.map((a) => (
+              <button key={a.id} onClick={() => go(`?article=${a.id}`)} className="text-left rounded-2xl border border-border bg-card p-5 hover:border-foreground/30 transition-colors flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-muted-foreground">{a.topic.label}</p>
+                  <p className="text-base font-semibold text-foreground mt-0.5">{a.title}</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">{a.summary}</p>
                 </div>
-              </div>
-            )}
+                <ChevronRight size={18} className="text-muted-foreground shrink-0" />
+              </button>
+            ))}
+            {results.faq.map((f) => <FaqItem key={f.q} q={f.q} a={f.a} defaultOpen />)}
+          </div>
+        </section>
+      )}
 
-            {/* Contact CTA */}
-            <div className="bg-card rounded-2xl border border-border p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-[#FFE100]/10 border border-[#FFE100]/20 flex items-center justify-center shrink-0">
-                <Mail size={20} className="text-[#FFE100]" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-sm font-semibold text-foreground">Can{"'"}t find what you need?</h3>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                  Our support team responds within your plan{"'"}s SLA. Reach out and we will get you sorted.
+      {/* Step-by-step guide */}
+      <Guide />
+
+      {/* Topics */}
+      <section>
+        <SectionHeading title="Browse by topic" sub="Everything VLYR does, explained." />
+        <div className="grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+          {TOPICS.map((t) => {
+            const Icon = ICONS[t.icon]
+            return (
+              <button key={t.id} onClick={() => go(`?topic=${t.id}`)} className="group text-left rounded-3xl border border-border bg-card p-6 hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.35)] hover:-translate-y-0.5 transition-all">
+                <span className="w-12 h-12 rounded-2xl bg-[#FFE100]/15 text-[#8A7400] flex items-center justify-center"><Icon size={22} /></span>
+                <p className="text-lg font-semibold text-foreground mt-5">{t.label}</p>
+                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{t.description}</p>
+                <p className="text-sm font-medium text-foreground mt-4 flex items-center gap-1 group-hover:gap-2 transition-all">
+                  {t.articles.length} article{t.articles.length === 1 ? "" : "s"} <ArrowRight size={14} />
                 </p>
-              </div>
-              <a
-                href="mailto:support@vlyr.com"
-                className="flex items-center gap-1.5 text-xs font-semibold text-[#FFE100] hover:underline underline-offset-4 shrink-0"
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* Popular */}
+      <section>
+        <SectionHeading title="Popular articles" />
+        <div className="grid lg:grid-cols-2 gap-x-10">
+          {["print-at-home", "text-alerts", "customer-experience", "rewards", "feedback-inbox", "qr-wont-scan"].map((id) => {
+            const a = findArticle(id)!
+            return (
+              <button key={id} onClick={() => go(`?article=${id}`)} className="text-left py-5 border-b border-border flex items-center gap-4 group">
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-semibold text-foreground group-hover:underline underline-offset-4">{a.title}</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">{a.summary}</p>
+                </div>
+                <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0"><Clock size={12} /> {a.minutes} min</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section>
+        <SectionHeading title="Frequently asked questions" />
+        <div className="grid lg:grid-cols-2 gap-3 items-start">
+          {FAQ.map((f) => <FaqItem key={f.q} q={f.q} a={f.a} />)}
+        </div>
+      </section>
+
+      <Contact />
+    </div>
+  )
+}
+
+/* ── Interactive guide ────────────────────────────────────────────── */
+
+function Guide() {
+  const [active, setActive] = useState(0)
+  const [done, setDone] = useState<Set<number>>(new Set())
+  const step = GUIDE[active]
+  const toggleDone = () => setDone((d) => { const n = new Set(d); if (n.has(active)) n.delete(active); else n.add(active); return n })
+
+  return (
+    <section>
+      <SectionHeading title="Get started in 6 steps" sub="From sign-up to your first rating. Tick each step off as you go." />
+      <div className="grid lg:grid-cols-[minmax(280px,380px)_1fr] gap-6">
+        <ol className="flex flex-col gap-2">
+          {GUIDE.map((g, i) => (
+            <li key={g.title}>
+              <button
+                onClick={() => setActive(i)}
+                className={`w-full text-left rounded-2xl px-4 py-3.5 flex items-center gap-3.5 transition-colors ${i === active ? "bg-[#0A0A0A] text-white" : "bg-card border border-border hover:border-foreground/30"}`}
               >
-                Contact Support <ExternalLink size={12} />
-              </a>
+                <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${done.has(i) ? "bg-green-500 text-white" : i === active ? "bg-[#FFE100] text-[#0A0A0A]" : "bg-secondary text-foreground"}`}>
+                  {done.has(i) ? <Check size={15} /> : i + 1}
+                </span>
+                <span className="text-[15px] font-semibold">{g.title}</span>
+              </button>
+            </li>
+          ))}
+          <li className="px-1 pt-2">
+            <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+              <div className="h-full bg-green-500 transition-all" style={{ width: `${(done.size / GUIDE.length) * 100}%` }} />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">{done.size} of {GUIDE.length} done</p>
+          </li>
+        </ol>
+
+        <AnimatePresence mode="wait">
+          <motion.div key={active} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: 0.2 }} className="rounded-3xl border border-border bg-card p-6 md:p-10 flex flex-col">
+            <p className="text-sm font-semibold text-[#8A7400]">Step {active + 1} of {GUIDE.length}</p>
+            <h3 className="text-2xl md:text-3xl font-bold text-foreground tracking-tight mt-2">{step.title}</h3>
+            <p className="text-base text-muted-foreground mt-2">{step.summary}</p>
+            <ul className="mt-6 flex flex-col gap-4">
+              {step.points.map((p) => (
+                <li key={p} className="flex gap-3 text-[15px] text-foreground leading-relaxed">
+                  <span className="w-6 h-6 rounded-full bg-[#FFE100]/20 text-[#8A7400] flex items-center justify-center shrink-0 mt-0.5"><Check size={13} /></span>
+                  {p}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-auto pt-8 flex flex-wrap items-center gap-3">
+              <Link href={step.action.href} className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-[#0A0A0A] text-white text-sm font-semibold hover:bg-[#1F1F1F]">
+                {step.action.label} <ArrowRight size={15} />
+              </Link>
+              <button onClick={toggleDone} className={`inline-flex items-center gap-2 h-11 px-5 rounded-full border text-sm font-semibold ${done.has(active) ? "border-green-500 text-green-600 bg-green-500/5" : "border-border hover:border-foreground/40"}`}>
+                <Check size={15} /> {done.has(active) ? "Done" : "Mark as done"}
+              </button>
+              <div className="ml-auto flex gap-2">
+                <button disabled={active === 0} onClick={() => setActive(active - 1)} aria-label="Previous step" className="w-11 h-11 rounded-full border border-border flex items-center justify-center disabled:opacity-30"><ArrowLeft size={16} /></button>
+                <button disabled={active === GUIDE.length - 1} onClick={() => setActive(active + 1)} aria-label="Next step" className="w-11 h-11 rounded-full border border-border flex items-center justify-center disabled:opacity-30"><ArrowRight size={16} /></button>
+              </div>
             </div>
           </motion.div>
+        </AnimatePresence>
+      </div>
+    </section>
+  )
+}
+
+/* ── Topic & article views ────────────────────────────────────────── */
+
+function TopicView({ topic, go }: { topic: Topic; go: (q: string) => void }) {
+  const Icon = ICONS[topic.icon]
+  return (
+    <div className="flex flex-col gap-10 pb-16">
+      <Breadcrumb items={[{ label: "Help", q: "" }, { label: topic.label }]} go={go} />
+      <header className="flex items-center gap-5">
+        <span className="w-16 h-16 rounded-3xl bg-[#FFE100]/15 text-[#8A7400] flex items-center justify-center"><Icon size={28} /></span>
+        <div>
+          <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-foreground">{topic.label}</h1>
+          <p className="text-base text-muted-foreground mt-2">{topic.description}</p>
+        </div>
+      </header>
+      <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-4">
+        {topic.articles.map((a) => (
+          <button key={a.id} onClick={() => go(`?article=${a.id}`)} className="text-left rounded-3xl border border-border bg-card p-6 hover:border-foreground/30 transition-colors">
+            <p className="text-lg font-semibold text-foreground">{a.title}</p>
+            <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">{a.summary}</p>
+            <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1"><Clock size={12} /> {a.minutes} min read</p>
+          </button>
+        ))}
+      </div>
+      <Contact />
+    </div>
+  )
+}
+
+function ArticleView({ article, topic, go }: { article: Article; topic: Topic; go: (q: string) => void }) {
+  const [vote, setVote] = useState<"up" | "down" | null>(null)
+  const idx = topic.articles.findIndex((a) => a.id === article.id)
+  const next = topic.articles[idx + 1] ?? null
+
+  return (
+    <div className="grid xl:grid-cols-[260px_minmax(0,1fr)] gap-10 pb-16">
+      <aside className="hidden xl:block">
+        <div className="sticky top-8">
+          <button onClick={() => go("")} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5 mb-6"><ArrowLeft size={14} /> All help topics</button>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">{topic.label}</p>
+          <ul className="flex flex-col gap-1">
+            {topic.articles.map((a) => (
+              <li key={a.id}>
+                <button onClick={() => go(`?article=${a.id}`)} className={`w-full text-left text-sm px-3 py-2 rounded-xl ${a.id === article.id ? "bg-secondary text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"}`}>{a.title}</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </aside>
+
+      <article className="max-w-3xl w-full">
+        <Breadcrumb items={[{ label: "Help", q: "" }, { label: topic.label, q: `?topic=${topic.id}` }, { label: article.title }]} go={go} />
+        <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-foreground mt-6 leading-tight">{article.title}</h1>
+        <p className="text-lg text-muted-foreground mt-4 leading-relaxed">{article.summary}</p>
+        <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1"><Clock size={12} /> {article.minutes} min read</p>
+
+        <div className="mt-10 flex flex-col gap-6">
+          {article.body.map((b, i) => <BlockView key={i} block={b} />)}
+        </div>
+
+        {article.action && (
+          <Link href={article.action.href} className="mt-10 inline-flex items-center gap-2 h-12 px-6 rounded-full bg-[#0A0A0A] text-white text-sm font-semibold hover:bg-[#1F1F1F]">
+            {article.action.label} <ArrowRight size={15} />
+          </Link>
         )}
-      </AnimatePresence>
-    </motion.div>
+
+        <div className="mt-14 pt-8 border-t border-border flex flex-col sm:flex-row sm:items-center gap-4">
+          <p className="text-sm font-medium text-foreground">{vote ? "Thanks for your feedback." : "Was this article helpful?"}</p>
+          {!vote && (
+            <div className="flex gap-2">
+              <button onClick={() => setVote("up")} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-full border border-border text-sm hover:border-foreground/40"><ThumbsUp size={14} /> Yes</button>
+              <button onClick={() => setVote("down")} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-full border border-border text-sm hover:border-foreground/40"><ThumbsDown size={14} /> No</button>
+            </div>
+          )}
+          {vote === "down" && <a href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Help: ${article.title}`)}`} className="text-sm underline underline-offset-4">Tell us what was missing</a>}
+        </div>
+
+        {next && (
+          <button onClick={() => go(`?article=${next.id}`)} className="mt-8 w-full text-left rounded-3xl border border-border bg-card p-6 hover:border-foreground/30 flex items-center gap-4">
+            <div className="flex-1">
+              <p className="text-xs text-muted-foreground">Next in {topic.label}</p>
+              <p className="text-lg font-semibold text-foreground mt-1">{next.title}</p>
+            </div>
+            <ArrowRight size={18} />
+          </button>
+        )}
+      </article>
+    </div>
+  )
+}
+
+/* ── Pieces ───────────────────────────────────────────────────────── */
+
+function BlockView({ block }: { block: Block }) {
+  switch (block.type) {
+    case "p":
+      return <p className="text-[17px] text-foreground/90 leading-[1.7]">{block.text}</p>
+    case "list":
+      return (
+        <ul className="flex flex-col gap-3">
+          {block.items.map((t) => (
+            <li key={t} className="flex gap-3 text-[17px] text-foreground/90 leading-[1.6]"><span className="w-1.5 h-1.5 rounded-full bg-foreground/60 mt-[11px] shrink-0" />{t}</li>
+          ))}
+        </ul>
+      )
+    case "steps":
+      return (
+        <ol className="flex flex-col gap-4">
+          {block.items.map((t, i) => (
+            <li key={t} className="flex gap-4 text-[17px] text-foreground/90 leading-[1.6]">
+              <span className="w-8 h-8 rounded-full bg-[#0A0A0A] text-[#FFE100] text-sm font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+              <span className="pt-0.5">{t}</span>
+            </li>
+          ))}
+        </ol>
+      )
+    case "tip":
+      return (
+        <div className="rounded-2xl bg-[#FFFBDA] border border-[#F3E27A] p-5 flex gap-3">
+          <Lightbulb size={18} className="text-[#8A7400] shrink-0 mt-0.5" />
+          <p className="text-[15px] text-[#4D4100] leading-relaxed"><span className="font-semibold">Tip: </span>{block.text}</p>
+        </div>
+      )
+    case "note":
+      return (
+        <div className="rounded-2xl bg-secondary/60 border border-border p-5 flex gap-3">
+          <Info size={18} className="text-muted-foreground shrink-0 mt-0.5" />
+          <p className="text-[15px] text-foreground/80 leading-relaxed">{block.text}</p>
+        </div>
+      )
+  }
+}
+
+function blockText(b: Block) {
+  return "text" in b ? b.text : b.items.join(" ")
+}
+
+function FaqItem({ q, a, defaultOpen = false }: { q: string; a: string; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="rounded-2xl border border-border bg-card">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="w-full text-left px-5 py-4 flex items-center gap-4">
+        <span className="flex-1 text-[15px] font-semibold text-foreground">{q}</span>
+        <ChevronDown size={18} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <p className="px-5 pb-5 -mt-1 text-[15px] text-muted-foreground leading-relaxed">{a}</p>}
+    </div>
+  )
+}
+
+function SectionHeading({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="mb-6">
+      <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">{title}</h2>
+      {sub && <p className="text-base text-muted-foreground mt-1.5">{sub}</p>}
+    </div>
+  )
+}
+
+function Breadcrumb({ items, go }: { items: { label: string; q?: string }[]; go: (q: string) => void }) {
+  return (
+    <nav className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground" aria-label="Breadcrumb">
+      {items.map((it, i) => (
+        <span key={i} className="flex items-center gap-1.5">
+          {i > 0 && <ChevronRight size={13} />}
+          {it.q !== undefined ? <button onClick={() => go(it.q!)} className="hover:text-foreground">{it.label}</button> : <span className="text-foreground">{it.label}</span>}
+        </span>
+      ))}
+    </nav>
+  )
+}
+
+function Contact() {
+  return (
+    <section className="rounded-[32px] border border-border bg-card p-8 md:p-12 grid md:grid-cols-[1fr_auto] gap-6 items-center">
+      <div>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">Still need help?</h2>
+        <p className="text-base text-muted-foreground mt-2 max-w-2xl">Write to us and a real person will get back to you, usually within one business day. Include your business name and what you were trying to do.</p>
+      </div>
+      <a href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("VLYR help")}`} className="inline-flex items-center justify-center gap-2 h-12 px-6 rounded-full bg-[#FFE100] text-[#0A0A0A] text-sm font-bold hover:bg-[#FFE100]/90">
+        <Mail size={16} /> Email {SUPPORT_EMAIL}
+      </a>
+    </section>
   )
 }

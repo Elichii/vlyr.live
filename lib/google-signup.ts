@@ -12,6 +12,8 @@ import { PACKAGES, PLAN_ALIASES } from "@/lib/onboarding-types"
 
 export const SIGNUP_NONCE_COOKIE = "vlyr_google_signup"
 const STATE_PREFIX = "signup_"
+/** Signed up without picking a plan (e.g. from the login page): setup asks for one first. */
+export const PLAN_NOT_CHOSEN = "choose"
 
 export interface SignupState {
   plan: string
@@ -30,7 +32,7 @@ export function decodeSignupState(state: string | null): SignupState | null {
     const s = JSON.parse(Buffer.from(state.slice(STATE_PREFIX.length), "base64url").toString("utf8"))
     if (typeof s?.nonce !== "string") return null
     return {
-      plan: normalizePlan(s.plan),
+      plan: s.plan === PLAN_NOT_CHOSEN ? PLAN_NOT_CHOSEN : normalizePlan(s.plan),
       cycle: s.cycle === "annual" ? "annual" : "monthly",
       ref: typeof s.ref === "string" ? s.ref.slice(0, 64) : "",
       nonce: s.nonce,
@@ -73,8 +75,7 @@ export async function findOrCreateGoogleMerchant(opts: {
     user_metadata: {
       username: usernameFrom(email),
       full_name: opts.name,
-      package_id: opts.plan,
-      billing_cycle: opts.cycle,
+      ...(opts.plan === PLAN_NOT_CHOSEN ? { plan_pending: true } : { package_id: opts.plan, billing_cycle: opts.cycle }),
       invite_ref: opts.ref || null,
       signup_method: "google",
     },
@@ -88,7 +89,7 @@ export async function findOrCreateGoogleMerchant(opts: {
   }
 
   // The signup trigger creates the merchant row; make sure the plan is set
-  await admin
+  if (opts.plan !== PLAN_NOT_CHOSEN) await admin
     .from("merchants")
     .update({ package_id: opts.plan, billing_cycle: opts.cycle, updated_at: new Date().toISOString() })
     .eq("id", data.user.id)

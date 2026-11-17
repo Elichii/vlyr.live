@@ -1,5 +1,5 @@
 /**
- * Modern VLYR sticker (portrait 1"×2" or landscape 2"×1").
+ * Modern VLYR sticker (portrait 1.5"×3" or landscape 3"×1.5"). Every sticker is one of these two.
  *
  * One layout feeds both the live preview in the designer (SVG) and the
  * printed PDF (lib/label-sheet.ts), so what merchants see is what prints.
@@ -10,7 +10,6 @@
  */
 import QRCode from "qrcode"
 import type { LabelDesign, QrDotStyle, QrEyeStyle } from "@/lib/label-types"
-import { VLYR_TEMPLATE } from "@/lib/sticker-template"
 
 // ── Defaults (the "Apple white" look) ───────────────────────────────
 export const MODERN_DEFAULTS = {
@@ -28,9 +27,8 @@ export const MODERN_DEFAULTS = {
 }
 
 export const STICKER_SIZES = {
-  "1x2": { w: 72, h: 144, label: 'Portrait 1" × 2"' },
-  "2x1": { w: 144, h: 72, label: 'Landscape 2" × 1"' },
-  vlyr: { w: VLYR_TEMPLATE.width, h: VLYR_TEMPLATE.height, label: 'VLYR standard 2.5" × 4.3"' },
+  "1x2": { w: 108, h: 216, label: 'Portrait 1.5" × 3"' },
+  "2x1": { w: 216, h: 108, label: 'Landscape 3" × 1.5"' },
 } as const
 
 // ── Elements produced by the layout ─────────────────────────────────
@@ -211,11 +209,10 @@ function fitLines(text: string, maxSize: number, minSize: number, font: StickerF
 // Measured from the approved design (a 180 × 313 artboard), in "design
 // units". Portrait uses a 180 × 360 frame and landscape 360 × 180; both
 // are scaled by 0.4 to print at 72 points per inch.
-const K = 0.4
+const K = 0.6 // design units → points (1.5" × 3" = 108 × 216 pt)
 
 export function stickerLayout(input: LayoutInput) {
   const { design, measure } = input
-  if (design.labelSize === "vlyr") return templateLayout(input)
   const size = design.labelSize === "2x1" ? "2x1" : "1x2"
   const { w: W, h: H } = STICKER_SIZES[size]
   const bg = safeHex(design.backgroundColor, MODERN_DEFAULTS.backgroundColor)
@@ -309,10 +306,6 @@ export function stickerLayout(input: LayoutInput) {
     els.push({ kind: "image", src: "vlyr", x: u(bx), y: u(by), w: u(boxW), h: u(boxH) })
   }
 
-  /** Sticker number, small and quiet (tells the business which box a scan came from). */
-  const number = (x: number, baseline: number, align: "left" | "center") =>
-    line(`No. ${String(input.seq).padStart(4, "0")}`, x, baseline, 5.2, "regular", align, { opacity: 0.4, tracking: 0.08 })
-
   const qrBlock = (x: number, y: number, s: number) => {
     // A dark sticker gets a white square behind the code (with a quiet zone)
     if (q.plate) {
@@ -339,12 +332,12 @@ export function stickerLayout(input: LayoutInput) {
     header(cx, 34, 110, 16, "center")
     const last = headlineBlock(cx, 80, 93, 26.7, maxW, "center")
     subBlock(cx, last + 22.4, 12, maxW, 2, "center")
-    qrBlock(40, 158, 100)
-    ctaBlock(cx, 282, 11, maxW, "center")
-    divider(17.4, 162.6, 297)
-    quick(cx, 314, 7.2, "center")
-    powered(cx, 332, 6, "center")
-    number(cx, 350, "center")
+    // No sticker number: the room goes to a larger QR code and more breathing space
+    qrBlock(35, 156, 110)
+    ctaBlock(cx, 290, 11, maxW, "center")
+    divider(17.4, 162.6, 306)
+    quick(cx, 323, 7.2, "center")
+    powered(cx, 342, 6, "center")
   } else {
     // Landscape: QR on the left, the words on the right in the same style
     qrBlock(18, 18, 144)
@@ -356,49 +349,9 @@ export function stickerLayout(input: LayoutInput) {
     divider(left, 342, 144)
     quick(left, 156, 6.3, "left")
     powered(left, 169, 5.2, "left")
-    // Number under the QR code
-    number(90, 173, "center")
   }
 
   return { width: W, height: H, elements: els, qrAdjusted: q.adjusted }
-}
-
-// ── The standard VLYR sticker (the approved design, as drawn) ───────
-function templateLayout(input: LayoutInput) {
-  const T = VLYR_TEMPLATE
-  const els: El[] = []
-  const reward = !!input.rewardOffer?.trim()
-
-  els.push({ kind: "path", d: T.card.d, fill: T.card.fill, stroke: T.card.stroke, strokeWidth: T.card.strokeWidth })
-
-  // "YOUR LOGO" becomes the business's logo, or its name in the same lettering
-  const cx = T.logoBox.x + T.logoBox.w / 2, cy = T.logoBox.y + T.logoBox.h / 2
-  if (input.logo) {
-    const ratio = input.logo.width / input.logo.height
-    let w = 110, h = w / ratio
-    if (h > 18) { h = 18; w = h * ratio }
-    els.push({ kind: "image", src: "logo", x: cx - w / 2, y: cy - h / 2, w, h })
-  } else if (input.businessName) {
-    let name = input.businessName.toUpperCase()
-    const tracking = 0.18
-    const width = (t: string, sz: number) => input.measure(t, sz, "medium") + tracking * sz * Math.max(0, t.length - 1)
-    let sz = 6.6
-    while (sz > 4.4 && width(name, sz) > 150) sz -= 0.1
-    while (name.length > 1 && width(name, sz) > 150) name = `${name.slice(0, -2).trimEnd()}…`
-    els.push({ kind: "text", x: cx - width(name, sz) / 2, y: cy + sz * 0.36, text: name, size: sz, font: "medium", color: "#6E6E73", tracking })
-  }
-
-  for (const p of T.parts) {
-    // Only promise a reward when the business actually offers one
-    if (p.role === "reward" && !reward) continue
-    els.push({ kind: "path", d: p.d, fill: p.fill ?? "none", stroke: p.stroke, strokeWidth: p.strokeWidth, ty: p.ty })
-  }
-
-  const qr = qrPaths(input.scanUrl, T.qr.x, T.qr.y, T.qr.size, "square", "square", false)
-  els.push({ kind: "path", d: qr.dots, fill: "#000000" })
-  els.push({ kind: "path", d: qr.eyes, fill: "#000000" })
-
-  return { width: T.width, height: T.height, elements: els, qrAdjusted: false }
 }
 
 // ── SVG renderer (designer preview) ─────────────────────────────────

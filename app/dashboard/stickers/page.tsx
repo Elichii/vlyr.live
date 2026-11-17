@@ -14,7 +14,7 @@ import type { MapPoint } from "@/components/sticker-map"
 const StickerMap = dynamic(() => import("@/components/sticker-map"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[420px] rounded-xl border border-border bg-secondary/40 flex items-center justify-center">
+    <div className="w-full h-[560px] lg:h-[calc(100svh-300px)] lg:min-h-[560px] rounded-xl border border-border bg-secondary/40 flex items-center justify-center">
       <VLYRInlineLoader label="Loading map..." />
     </div>
   ),
@@ -211,7 +211,7 @@ export default function StickerMapPage() {
     .sort((a, b) => (b.lastScannedAt ?? "").localeCompare(a.lastScannedAt ?? "") || a.seq - b.seq)
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 max-w-6xl">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
@@ -267,7 +267,7 @@ export default function StickerMapPage() {
       </div>
 
       {/* Map + insights */}
-      <div className="grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 items-start">
+      <div className="grid xl:grid-cols-[minmax(0,3fr)_minmax(320px,1fr)] gap-4 items-start">
         <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap gap-1 p-1 rounded-lg bg-secondary/50 border border-border">

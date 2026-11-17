@@ -218,7 +218,7 @@ export default function AnalyticsPage() {
       variants={container}
       initial="hidden"
       animate="show"
-      className="space-y-6 max-w-7xl mx-auto"
+      className="space-y-6"
     >
       {/* Header */}
       <motion.div variants={item} className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

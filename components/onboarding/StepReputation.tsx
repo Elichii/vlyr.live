@@ -274,7 +274,7 @@ function ReputationImpact({
       </div>
 
       <p className="text-center text-xs text-[#AAAAAA]">
-        No credit card required · Cancel anytime
+        Cancel anytime
       </p>
     </motion.div>
   )

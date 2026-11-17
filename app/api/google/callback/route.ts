@@ -8,6 +8,7 @@ import {
   setCustomerCookie,
 } from "@/lib/customer-session"
 import {
+  PLAN_NOT_CHOSEN,
   SIGNUP_NONCE_COOKIE,
   createLoginTokenHash,
   decodeSignupState,
@@ -478,7 +479,7 @@ export async function GET(request: NextRequest) {
       const next = signupMerchant.onboarded
         ? new URL("/dashboard", baseUrl)
         : new URL("/onboarding", baseUrl)
-      if (!signupMerchant.onboarded) {
+      if (!signupMerchant.onboarded && signup!.plan !== PLAN_NOT_CHOSEN) {
         next.searchParams.set("plan", signup!.plan)
         next.searchParams.set("cycle", signup!.cycle)
         next.searchParams.set("step", "google-connect")

@@ -6,13 +6,14 @@ import useSWR, { mutate } from "swr"
 import {
   ShoppingCart, QrCode, Layers, Sticker, CheckCircle2, Plus, Minus,
   ArrowRight, RotateCcw, Package, CreditCard, ArrowLeft, Lock, X, Printer,
+  Scissors, Download, Eye, Sticker as StickerIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/client"
 import { VLYRLoader, VLYRInlineLoader } from "@/components/vlyr-loader"
-import { LabelDesigner } from "@/components/label-designer"
+import { StickerDesigner } from "@/components/sticker-designer"
 import { PrintAtHomeLabels } from "@/components/print-at-home-labels"
 import type { LabelDesign } from "@/lib/label-types"
 
@@ -41,7 +42,7 @@ async function fetchMerchant() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data } = await supabase
-    .from("merchants").select("business_name, logo_url")
+    .from("merchants").select("business_name, logo_url, package_id")
     .eq("id", user.id).single()
   // Also fetch primary review link
   const { data: primaryLink } = await supabase
@@ -55,6 +56,14 @@ async function fetchMerchant() {
 export default function SupplyShop() {
   const { data: lastOrder, isLoading } = useSWR("last-order", fetchLastOrder)
   const { data: merchant } = useSWR("merchant-supply", fetchMerchant)
+  // Print-at-home stickers already created (the free trial is a one-time batch)
+  const { data: labels } = useSWR<{ batches?: { id: string; first_seq: number; last_seq: number; quantity: number }[] }>(
+    "label-batches",
+    () => fetch("/api/labels/batches").then((r) => r.json()),
+  )
+  const isFreePlan = merchant?.package_id === "free"
+  const trialBatch = isFreePlan ? labels?.batches?.[0] ?? null : null
+  const trialUnused = isFreePlan && Array.isArray(labels?.batches) && labels!.batches!.length === 0
   const [cart, setCart] = useState<Record<string, number>>({})
   const [step, setStep] = useState<"shop" | "design" | "payment" | "print">("shop")
 
@@ -189,7 +198,7 @@ export default function SupplyShop() {
       <PrintAtHomeLabels
         businessName={merchant?.business_name || ""}
         logoUrl={merchant?.logo_url || null}
-        onBack={() => setStep("shop")}
+        onBack={() => { mutate("label-batches"); setStep("shop") }}
       />
     )
   }
@@ -213,7 +222,7 @@ export default function SupplyShop() {
           </div>
         </div>
 
-<LabelDesigner
+<StickerDesigner
   initialBusinessName={merchant?.business_name || "Your Business"}
   initialLogoUrl={merchant?.logo_url || null}
   reviewUrl={merchant?.primary_review_url || ""}
@@ -367,25 +376,90 @@ export default function SupplyShop() {
         <p className="text-sm text-muted-foreground mt-1">Order QR materials and accessories for your business</p>
       </div>
 
-      {/* Print at home (free) */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-card border border-[#FFE100]/30 rounded-2xl">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl bg-[#FFE100]/10 border border-[#FFE100]/20 flex items-center justify-center shrink-0">
-            <Printer size={18} className="text-[#FFE100]" />
+      {/* Free trial: print 15 stickers at home (one time) */}
+      {trialUnused && (
+        <motion.section initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="relative overflow-hidden rounded-3xl bg-[#0A0A0A] text-white">
+          <div className="absolute inset-0 opacity-[0.12] pointer-events-none" style={{ backgroundImage: "radial-gradient(#FFE100 1px, transparent 1px)", backgroundSize: "16px 16px" }} />
+          <div className="relative grid lg:grid-cols-[1.4fr_1fr] gap-8 p-6 md:p-10 items-center">
+            <div>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#0A0A0A] bg-[#FFE100] rounded-full px-3 py-1">One-time free trial</span>
+              <h2 className="text-3xl md:text-4xl font-bold tracking-tight mt-4 leading-tight">Print 15 VLYR stickers at home. Free.</h2>
+              <p className="text-white/70 mt-3 max-w-xl leading-relaxed">
+                Each sticker has its own QR code and number. Put one on every order this week and see who your happy, and unhappy, customers really are.
+              </p>
+              <div className="grid sm:grid-cols-3 gap-3 mt-6">
+                {[
+                  { icon: Printer, t: "Print", d: "On US Letter or A4 sticker paper, at 100%." },
+                  { icon: Scissors, t: "Cut", d: "Between the small corner marks." },
+                  { icon: StickerIcon, t: "Stick", d: "One on every bag, box or receipt." },
+                ].map(({ icon: Icon, t, d }) => (
+                  <div key={t} className="rounded-2xl bg-white/[0.06] ring-1 ring-white/10 p-4">
+                    <Icon size={17} className="text-[#FFE100]" />
+                    <p className="text-sm font-semibold mt-2">{t}</p>
+                    <p className="text-xs text-white/60 mt-0.5">{d}</p>
+                  </div>
+                ))}
+              </div>
+              <Button onClick={() => setStep("print")} className="mt-7 h-12 px-7 rounded-full bg-[#FFE100] text-[#0A0A0A] hover:bg-[#FFE100]/90 font-bold gap-2">
+                <Printer size={17} /> Get my 15 free stickers
+              </Button>
+            </div>
+            <div className="hidden lg:flex justify-center">
+              <div className="relative">
+                <div className="absolute -inset-6 rounded-[40px] bg-[#FFE100]/20 blur-2xl" />
+                <div className="relative w-52 rounded-[28px] bg-white text-[#0A0A0A] p-5 text-center shadow-2xl rotate-[-4deg]">
+                  <p className="text-[9px] tracking-[0.2em] text-[#6E6E73] font-semibold uppercase truncate">{merchant?.business_name || "Your business"}</p>
+                  <p className="text-xl font-bold leading-tight mt-3">Tell us<br />how we did.</p>
+                  <div className="mx-auto mt-4 w-24 h-24 rounded-md bg-[#0A0A0A] flex items-center justify-center"><QrCode size={64} className="text-white" /></div>
+                  <p className="text-xs mt-3">Scan to review →</p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div>
-            <span className="text-sm font-semibold text-foreground flex items-center gap-2">
-              Print labels at home <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">Free</Badge>
-            </span>
-            <span className="text-xs text-muted-foreground block mt-0.5 max-w-lg">
-              Download numbered QR labels as a PDF. Print on sticker paper, cut them out and stick one on every takeaway box.
-            </span>
+        </motion.section>
+      )}
+
+      {/* Free trial already printed: download the same 15 again */}
+      {trialBatch && (
+        <section className="flex flex-col md:flex-row md:items-center gap-4 p-5 rounded-2xl bg-card border border-border">
+          <div className="flex items-start gap-3 flex-1">
+            <div className="w-11 h-11 rounded-xl bg-[#FFE100]/10 border border-[#FFE100]/20 flex items-center justify-center shrink-0"><StickerIcon size={18} className="text-[#C9A800]" /></div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Your free trial stickers</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {trialBatch.quantity} stickers · No. {String(trialBatch.first_seq).padStart(4, "0")}–{String(trialBatch.last_seq).padStart(4, "0")}. Downloading again prints the same QR codes, so stickers you already handed out keep working.
+              </p>
+            </div>
           </div>
-        </div>
-        <Button onClick={() => setStep("print")} className="bg-[#FFE100] text-[#111] hover:bg-[#FFE100]/90 rounded-xl font-semibold h-10 px-5 gap-2 shrink-0">
-          <Printer size={15} /> Print labels
-        </Button>
-      </motion.div>
+          <div className="flex flex-wrap gap-2">
+            <a href={`/api/labels/batches/${trialBatch.id}/pdf`} download className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-[#FFE100] text-[#111] text-sm font-semibold hover:bg-[#FFE100]/90"><Download size={15} /> US Letter PDF</a>
+            <a href={`/api/labels/batches/${trialBatch.id}/pdf?paper=a4`} download className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-border text-sm font-semibold hover:bg-secondary"><Download size={15} /> A4 PDF</a>
+            <a href={`/api/labels/batches/${trialBatch.id}/pdf?view=1`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-border text-sm font-semibold hover:bg-secondary"><Eye size={15} /> Preview</a>
+          </div>
+        </section>
+      )}
+
+      {/* Paid plans: print more at home any time */}
+      {merchant && !isFreePlan && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-card border border-[#FFE100]/30 rounded-2xl">
+          <div className="flex items-start gap-3">
+            <div className="w-11 h-11 rounded-xl bg-[#FFE100]/10 border border-[#FFE100]/20 flex items-center justify-center shrink-0">
+              <Printer size={18} className="text-[#FFE100]" />
+            </div>
+            <div>
+              <span className="text-sm font-semibold text-foreground flex items-center gap-2">
+                Print labels at home <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">Free</Badge>
+              </span>
+              <span className="text-xs text-muted-foreground block mt-0.5 max-w-lg">
+                Download numbered QR labels as a PDF. Print on sticker paper, cut them out and stick one on every takeaway box.
+              </span>
+            </div>
+          </div>
+          <Button onClick={() => setStep("print")} className="bg-[#FFE100] text-[#111] hover:bg-[#FFE100]/90 rounded-xl font-semibold h-10 px-5 gap-2 shrink-0">
+            <Printer size={15} /> Print labels
+          </Button>
+        </motion.div>
+      )}
 
       {/* Quick Reorder Banner */}
       {lastOrder && (

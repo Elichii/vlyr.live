@@ -17,7 +17,20 @@ import {
   MessageSquareWarning,
   Gift,
   MapPin,
+  Printer,
+  Sparkles,
+  ArrowRight,
 } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -60,6 +73,9 @@ export default function DashboardLayout({
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [confirmSignOut, setConfirmSignOut] = useState(false)
+  // Free trial: have they printed their free stickers yet?
+  const { data: labels } = useSWR<{ batches?: unknown[] }>("label-batches", () => fetch("/api/labels/batches").then((r) => r.json()))
 
   const { data: merchant, isLoading: merchantLoading } = useSWR("merchant-sidebar", fetchMerchant)
   // New ratings since the manager last opened Customer Feedback
@@ -70,6 +86,9 @@ export default function DashboardLayout({
   )
 
   const displayName = merchant?.business_name || "My Business"
+  // Shown on every page until the free trial stickers have been printed (not on Supply Shop itself)
+  const showTrialBanner =
+    merchant?.package_id === "free" && labels && Array.isArray(labels.batches) && labels.batches.length === 0 && pathname !== "/dashboard/supply"
   const planLabel =
     merchant?.package_id === "free"
       ? "Free Trial · Upgrade"
@@ -191,7 +210,7 @@ export default function DashboardLayout({
 
         <div className="mt-auto">
           <button
-            onClick={handleSignOut}
+            onClick={() => setConfirmSignOut(true)}
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#FFFFFF]/50 hover:text-[#FFFFFF] hover:bg-[#FFFFFF]/5 transition-all w-full"
           >
             <LogOut size={18} />
@@ -230,12 +249,57 @@ export default function DashboardLayout({
             <div className="flex flex-col gap-6 mt-4">
               <MerchantBadge />
               <SidebarNav onNavigate={() => setMobileOpen(false)} />
+              <button
+                onClick={() => { setMobileOpen(false); setConfirmSignOut(true) }}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#FFFFFF]/50 hover:text-[#FFFFFF] hover:bg-[#FFFFFF]/5 transition-all w-full"
+              >
+                <LogOut size={18} />
+                Sign out
+              </button>
             </div>
           </SheetContent>
         </Sheet>
 
         {/* Main content - white bg */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 bg-background">{children}</main>
+        <main className="flex-1 p-4 md:p-6 lg:p-8 bg-background">
+          {showTrialBanner && (
+            <div className="mb-6 relative overflow-hidden rounded-3xl bg-[#0A0A0A] text-white p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4">
+              <div
+                className="absolute inset-0 opacity-[0.12] pointer-events-none"
+                style={{ backgroundImage: "radial-gradient(#FFE100 1px, transparent 1px)", backgroundSize: "16px 16px" }}
+              />
+              <div className="relative flex items-center gap-4 flex-1 min-w-0">
+                <span className="w-12 h-12 rounded-2xl bg-[#FFE100] text-[#0A0A0A] flex items-center justify-center shrink-0"><Sparkles size={22} /></span>
+                <div className="min-w-0">
+                  <p className="text-base md:text-lg font-bold">Your 15 free stickers are ready to print</p>
+                  <p className="text-sm text-white/65">One-time trial: print them at home on sticker paper, put one on every order, and watch the ratings come in.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigateTo("/dashboard/supply")}
+                className="relative inline-flex items-center justify-center gap-2 h-11 px-5 rounded-full bg-[#FFE100] text-[#0A0A0A] text-sm font-bold hover:bg-[#FFE100]/90 shrink-0"
+              >
+                <Printer size={16} /> Print my free stickers <ArrowRight size={15} />
+              </button>
+            </div>
+          )}
+          {children}
+        </main>
+
+        <AlertDialog open={confirmSignOut} onOpenChange={setConfirmSignOut}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Sign out of VLYR?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You&apos;ll stop seeing new ratings here until you sign in again. Text alerts keep working while you&apos;re signed out.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Stay signed in</AlertDialogCancel>
+              <AlertDialogAction onClick={handleSignOut}>Sign out</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   )

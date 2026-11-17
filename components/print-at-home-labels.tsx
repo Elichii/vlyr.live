@@ -13,7 +13,7 @@ import { StickerDesigner } from "@/components/sticker-designer"
 import { VLYRInlineLoader } from "@/components/vlyr-loader"
 import { buildScanUrl } from "@/lib/short-code"
 import { PAPER, SIZE_NAMES, formatSeq, sheetGrid, type PaperSize } from "@/lib/label-sheet-layout"
-import { isModernSize, type LabelDesign } from "@/lib/label-types"
+import type { LabelDesign } from "@/lib/label-types"
 
 const MAX_LABELS = 500
 const SHEET_PRESETS = [1, 2, 5, 10]
@@ -442,7 +442,7 @@ export function PrintAtHomeLabels({ businessName, logoUrl, onBack }: PrintAtHome
                     No. {formatSeq(b.first_seq)}–{formatSeq(b.last_seq)}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    {b.quantity} labels · {isFree ? SIZE_NAMES.vlyr : <>{SIZE_NAMES[b.design_json?.labelSize ?? "3inch"] ?? ""}{isModernSize(b.design_json?.labelSize ?? "3inch") ? "" : ` ${b.design_json?.shape?.replace("-", " ") ?? ""}`}</>} ·{" "}
+                    {b.quantity} labels · {SIZE_NAMES[!isFree && b.design_json?.labelSize === "2x1" ? "2x1" : "1x2"]} ·{" "}
                     {PAPER[b.paper]?.name ?? "US Letter"}{b.ink_saver ? " · ink saver" : ""} ·{" "}
                     {new Date(b.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                   </p>

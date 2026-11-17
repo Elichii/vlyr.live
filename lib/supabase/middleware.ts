@@ -87,15 +87,18 @@ export async function updateSession(request: NextRequest) {
   if (isDashboard && !isBillingBlocked && user) {
     const { data: merchant } = await supabase
       .from('merchants')
-      .select('subscription_status, business_name, google_ownership_verified, package_id, billing_cycle')
+      // "*" so this keeps working before scripts/012 adds onboarding_completed_at
+      .select('*')
       .eq('id', user.id)
       .single()
 
-    // Only businesses whose ownership Google has confirmed can use the
-    // dashboard. Anyone else goes back to finish setup at the right step.
+    // Only businesses whose ownership Google has confirmed, and who went
+    // through every setup step, can use the dashboard. Anyone else goes
+    // back to finish setup where they left off.
     const verified = merchant?.google_ownership_verified === true
     const hasBusiness = !!merchant?.business_name?.trim()
-    if (!verified || !hasBusiness) {
+    const finished = merchant && 'onboarding_completed_at' in merchant ? !!merchant.onboarding_completed_at : true
+    if (!verified || !hasBusiness || !finished) {
       const url = request.nextUrl.clone()
       url.pathname = '/onboarding'
       url.search = ''

@@ -38,12 +38,132 @@ function popupHtml(p: MapPoint) {
   </div>`
 }
 
+const MAP_HEIGHT = "h-[560px] lg:h-[calc(100svh-300px)] lg:min-h-[560px]"
+const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+
 /**
- * Interactive map of where stickers were scanned (Leaflet + free OpenStreetMap
- * tiles). Yellow = 4–5★, red = 1–3★, grey = scanned without a rating.
- * Approximate locations get a soft halo to show they're not exact.
+ * Map of where stickers were scanned. Yellow = 4–5★, red = 1–3★, grey =
+ * scanned without a rating; approximate locations get a soft halo.
+ *
+ * Uses Google Maps when NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is set (a browser
+ * key restricted to the site's domains); otherwise a free street map.
  */
-export default function StickerMap({ store, points, focusId, onSelect }: StickerMapProps) {
+export default function StickerMap(props: StickerMapProps) {
+  return GOOGLE_KEY ? <GoogleStickerMap {...props} apiKey={GOOGLE_KEY} /> : <LeafletStickerMap {...props} />
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+let googleLoading: Promise<any> | null = null
+function loadGoogleMaps(key: string): Promise<any> {
+  const w = window as any
+  if (w.google?.maps) return Promise.resolve(w.google.maps)
+  googleLoading ??= new Promise((resolve, reject) => {
+    w.__vlyrMapsReady = () => resolve(w.google.maps)
+    const script = document.createElement("script")
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&callback=__vlyrMapsReady`
+    script.async = true
+    script.onerror = reject
+    document.head.appendChild(script)
+  })
+  return googleLoading
+}
+
+function GoogleStickerMap({ store, points, focusId, onSelect, apiKey }: StickerMapProps & { apiKey: string }) {
+  const el = useRef<HTMLDivElement>(null)
+  const gmap = useRef<any>(null)
+  const gm = useRef<any>(null)
+  const overlays = useRef<any[]>([])
+  const byId = useRef(new Map<string, any>())
+  const info = useRef<any>(null)
+
+  const draw = () => {
+    const maps = gm.current
+    const m = gmap.current
+    if (!maps || !m) return
+    overlays.current.forEach((o) => o.setMap(null))
+    overlays.current = []
+    byId.current.clear()
+    const bounds = new maps.LatLngBounds()
+    let count = 0
+
+    if (store) {
+      const mk = new maps.Marker({
+        position: { lat: store.lat, lng: store.lng },
+        map: m,
+        title: `${store.name} (your store)`,
+        zIndex: 1000,
+        label: { text: "V", color: "#FFE100", fontWeight: "700" },
+        icon: { path: maps.SymbolPath.CIRCLE, scale: 15, fillColor: "#0A0A0A", fillOpacity: 1, strokeColor: "#FFE100", strokeWeight: 2 },
+      })
+      overlays.current.push(mk)
+      bounds.extend(mk.getPosition())
+      count++
+    }
+
+    const ordered = [...points].sort((a, b) => (a.kind === "scan" ? 0 : 1) - (b.kind === "scan" ? 0 : 1))
+    for (const p of ordered) {
+      const color = COLORS[p.kind]
+      if (!p.precise) {
+        overlays.current.push(new maps.Circle({ map: m, center: { lat: p.lat, lng: p.lng }, radius: 900, strokeOpacity: 0, fillColor: color, fillOpacity: 0.1, clickable: false }))
+      }
+      const mk = new maps.Marker({
+        position: { lat: p.lat, lng: p.lng },
+        map: m,
+        title: p.title,
+        icon: { path: maps.SymbolPath.CIRCLE, scale: p.kind === "scan" ? 5 : 8, fillColor: color, fillOpacity: p.kind === "scan" ? 0.75 : 1, strokeColor: "#ffffff", strokeWeight: 2 },
+      })
+      mk.addListener("click", () => {
+        info.current?.setContent(popupHtml(p))
+        info.current?.open({ map: m, anchor: mk })
+        onSelect?.(p.id)
+      })
+      overlays.current.push(mk)
+      byId.current.set(p.id, { marker: mk, point: p })
+      bounds.extend(mk.getPosition())
+      count++
+    }
+
+    if (count > 1) m.fitBounds(bounds, 60)
+    else if (count === 1) { m.setCenter(bounds.getCenter()); m.setZoom(14) }
+    else { m.setCenter({ lat: 39.5, lng: -98.35 }); m.setZoom(4) }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    loadGoogleMaps(apiKey).then((maps) => {
+      if (cancelled || !el.current || gmap.current) return
+      gm.current = maps
+      gmap.current = new maps.Map(el.current, {
+        center: { lat: 39.5, lng: -98.35 },
+        zoom: 4,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true,
+        gestureHandling: "cooperative",
+      })
+      info.current = new maps.InfoWindow()
+      draw()
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [apiKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(draw, [store?.lat, store?.lng, points]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!focusId || !gmap.current) return
+    const hit = byId.current.get(focusId)
+    if (!hit) return
+    gmap.current.panTo(hit.marker.getPosition())
+    if (gmap.current.getZoom() < 14) gmap.current.setZoom(14)
+    info.current?.setContent(popupHtml(hit.point))
+    info.current?.open({ map: gmap.current, anchor: hit.marker })
+  }, [focusId])
+
+  return <div ref={el} className={`w-full ${MAP_HEIGHT} rounded-xl overflow-hidden border border-border`} />
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+function LeafletStickerMap({ store, points, focusId, onSelect }: StickerMapProps) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<Leaflet.Map | null>(null)
   const L = useRef<typeof Leaflet | null>(null)
@@ -58,8 +178,7 @@ export default function StickerMap({ store, points, focusId, onSelect }: Sticker
       L.current = mod
       const m = mod.map(el.current, { zoomControl: true, scrollWheelZoom: false, attributionControl: true })
       mod
-        // Free OpenStreetMap tiles (attribution required). For heavy traffic,
-        // switch to a hosted tile provider.
+        // Free OpenStreetMap tiles until a Google Maps browser key is set
         .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
           maxZoom: 19,
@@ -70,6 +189,8 @@ export default function StickerMap({ store, points, focusId, onSelect }: Sticker
       layer.current = mod.layerGroup().addTo(m)
       map.current = m
       draw()
+      // The map's height comes from the page layout: measure again once it has settled
+      setTimeout(() => { m.invalidateSize(); draw() }, 250)
     })
     return () => {
       cancelled = true
@@ -138,5 +259,5 @@ export default function StickerMap({ store, points, focusId, onSelect }: Sticker
     }
   }, [focusId])
 
-  return <div ref={el} className="w-full h-[420px] rounded-xl overflow-hidden border border-border z-0" />
+  return <div ref={el} className={`w-full ${MAP_HEIGHT} rounded-xl overflow-hidden border border-border z-0`} />
 }

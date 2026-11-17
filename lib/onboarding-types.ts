@@ -6,6 +6,9 @@ export interface OnboardingData {
   password: string
   phone: string
   otpVerified: boolean
+  /** The person managing the business on VLYR ("About you" step) */
+  ownerName: string
+  ownerTitle: string
 
   // Phase 2: Business Identity
   businessName: string
@@ -160,6 +163,8 @@ export const DEFAULT_ONBOARDING: OnboardingData = {
   username: "",
   password: "",
   phone: "",
+  ownerName: "",
+  ownerTitle: "",
   otpVerified: false,
   businessName: "",
   businessCategory: "",

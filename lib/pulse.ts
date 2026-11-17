@@ -26,6 +26,11 @@ export interface PulseContext {
   /** What the business offers for feedback, if anything */
   rewardOffer: string | null
   rewardValidDays: number
+  /**
+   * The business still uses VLYR (Google-verified, not cancelled).
+   * Stickers of a disconnected or closed business can't be rated.
+   */
+  active: boolean
 }
 
 export interface Reward {
@@ -52,7 +57,7 @@ export async function getPulseContext(rawCode: string): Promise<PulseContext | n
   const [{ data: merchant }, { data: link }] = await Promise.all([
     admin
       .from("merchants")
-      .select("business_name, logo_url, google_place_id, google_verified_place_id, reward_enabled, reward_offer, reward_valid_days")
+      .select("business_name, logo_url, google_place_id, google_verified_place_id, reward_enabled, reward_offer, reward_valid_days, google_ownership_verified, subscription_status")
       .eq("id", label.merchant_id)
       .maybeSingle(),
     admin.from("review_links").select("url").eq("merchant_id", label.merchant_id).eq("is_primary", true).maybeSingle(),
@@ -71,6 +76,10 @@ export async function getPulseContext(rawCode: string): Promise<PulseContext | n
     usedByEmail: label.used_by_email ?? null,
     rewardOffer: merchant.reward_enabled && offer ? offer : null,
     rewardValidDays: clampDays(merchant.reward_valid_days),
+    active:
+      merchant.google_ownership_verified === true &&
+      !!merchant.business_name?.trim() &&
+      !["canceled", "cancelled", "inactive", "suspended"].includes(String(merchant.subscription_status ?? "").toLowerCase()),
   }
 }
 

@@ -18,8 +18,8 @@ export const LABEL_INCHES: Record<LabelDesign["labelSize"], { w: number; h: numb
   "2inch": { w: 2, h: 2 },
   "3inch": { w: 3, h: 3 },
   "4inch": { w: 4, h: 4 },
-  "1x2": { w: 1, h: 2 },
-  "2x1": { w: 2, h: 1 },
+  "1x2": { w: 1.5, h: 3 },
+  "2x1": { w: 3, h: 1.5 },
   vlyr: { w: 180 / 72, h: 309 / 72 },
 }
 
@@ -27,8 +27,8 @@ export const SIZE_NAMES: Record<LabelDesign["labelSize"], string> = {
   "2inch": '2"',
   "3inch": '3"',
   "4inch": '4"',
-  "1x2": '1" × 2" portrait',
-  "2x1": '2" × 1" landscape',
+  "1x2": '1.5" × 3" portrait',
+  "2x1": '3" × 1.5" landscape',
   vlyr: 'VLYR standard 2.5" × 4.3"',
 }
 

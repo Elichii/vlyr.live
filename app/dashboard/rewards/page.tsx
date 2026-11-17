@@ -90,7 +90,7 @@ export default function RewardsPage() {
   const redeemed = coupons.filter((c) => c.redeemed_at).length
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 max-w-4xl">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground tracking-tight flex items-center gap-2">
           <Gift size={22} className="text-[#FFE100]" /> Rewards

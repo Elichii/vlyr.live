@@ -13,6 +13,7 @@ import { VLYRLoader } from "@/components/vlyr-loader"
 import { createClient } from "@/lib/supabase/client"
 import { EmailButton, fetchActivity, type ActivityItem } from "@/components/customer-activity"
 import { TextAlertsCard } from "@/components/text-alerts-card"
+import { EmailAlertsCard } from "@/components/email-alerts-card"
 
 type Filter = "follow-up" | "unhappy" | "happy" | "all"
 
@@ -103,7 +104,7 @@ function FeedbackInbox() {
   const isNewItem = (i: ActivityItem) => newIds.current?.has(i.id) ?? i.isNew
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 max-w-6xl">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
         <div>
@@ -117,6 +118,7 @@ function FeedbackInbox() {
         <span className="text-[11px] text-muted-foreground">Updates automatically</span>
       </div>
 
+      <EmailAlertsCard />
       <TextAlertsCard />
 
       {/* Summary */}

@@ -113,7 +113,8 @@ async function fetchBusinessBaseline(placeId: string): Promise<{
 
 export async function POST(request: NextRequest) {
   try {
-    const { placeId, businessName, businessAddress } = await request.json()
+    // The body can only be read once
+    const { placeId, businessName, businessAddress, manualLocationId } = await request.json().catch(() => ({}))
 
     console.log("[v0] ========== VERIFY OWNERSHIP START ==========")
     console.log("[v0] Input:", { placeId, businessName, businessAddress })
@@ -234,9 +235,6 @@ export async function POST(request: NextRequest) {
 
     // CHECK 3: No managed businesses found
     if (!managedBusinesses || managedBusinesses.length === 0) {
-      // Check if manual Location ID was provided (for Modern Experience businesses)
-      const { manualLocationId } = await request.clone().json().catch(() => ({}))
-      
       // A typed-in Location ID can't prove ownership (anyone can type one),
       // so it is no longer accepted. Owners must sign in with the Google
       // account that manages the business.

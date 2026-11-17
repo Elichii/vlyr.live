@@ -6,6 +6,7 @@
 // 4. Trigger SMS alerts for new negative reviews (1-3 stars)
 
 import { alertText, alertsLive, optOutPhone } from "@/lib/sms-alerts"
+import { sendGoogleReviewEmail } from "@/lib/email-alerts"
 import { sendSms, smsStatus, TWILIO_OPTED_OUT } from "@/lib/sms"
 import { NextResponse } from "next/server"
 import { createClient as createServiceClient } from "@supabase/supabase-js"
@@ -195,6 +196,7 @@ export async function GET(request: Request) {
           // Low ratings: text the manager, but only for reviews that just came in
           const recent = Date.now() - new Date(review.createTime).getTime() < ALERT_WINDOW_MS
           if (starRating <= 3 && !firstSync && recent) {
+            await sendGoogleReviewEmail({ merchantId: merchant.id, stars: starRating, reviewer: review.reviewer?.displayName ?? null, comment: review.comment ?? null })
             try {
               const sent = await triggerNegativeReviewSMS(merchant.id, merchant.business_name, review, starRating)
               await supabase.from("google_reviews").update({

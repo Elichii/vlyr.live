@@ -1,48 +1,28 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { BusinessProfileCard } from "@/components/onboarding/BusinessProfileCard"
+import { ConnectedBusiness } from "@/components/onboarding/ConnectedBusiness"
+import type { BusinessPreview } from "@/lib/google/business-profile"
+import { normalizeCategory } from "@/lib/google/categories"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   ArrowRight, ArrowLeft, Building2, Star, CheckCircle2,
   Loader2, AlertTriangle, MapPin, Phone, Globe, Lock, Mail, RefreshCw,
-  ExternalLink,
+  ExternalLink, KeyRound, ShieldCheck, UserPlus, LogIn, Store,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
-import type { OnboardingData, ReviewSnapshot } from "@/lib/onboarding-types"
-
-interface ReviewData {
-  author: string
-  rating: number
-  text: string
-  time: number
-  relativeTime: string
-  authorPhoto?: string | null
-}
-
-interface GoogleBusinessData {
-  placeId: string
-  businessName: string
-  address: string
-  phone: string | null
-  category: string
-  lat: number | null
-  lng: number | null
-  website: string | null
-  googleMapsUrl: string | null
-  reviewUrl: string
-  rating: number | null
-  totalReviews: number
-  logoUrl: string | null
-  openingHours?: string[] | null
-  reviews?: ReviewData[]
-}
+import type { OnboardingData } from "@/lib/onboarding-types"
 
 interface StepGoogleConnectProps {
   data: OnboardingData
   onChange: (updates: Partial<OnboardingData>) => void
   onNext: () => void
-  onBack: () => void
+  /** Missing when there's no earlier step to return to */
+  onBack?: () => void
+  /** Tells the side panel which business is highlighted */
+  onPreview?: (b: { name: string; rating: number | null; totalReviews: number | null; logoUrl: string | null } | null) => void
 }
 
 type VerificationStep = "google-signin" | "select-business" | "verified"
@@ -59,16 +39,15 @@ function GoogleIcon({ size = 20 }: { size?: number }) {
   )
 }
 
-export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogleConnectProps) {
+export function StepGoogleConnect({ data, onChange, onNext, onBack, onPreview }: StepGoogleConnectProps) {
   const [step, setStep] = useState<VerificationStep>("google-signin")
   const [isConnecting, setIsConnecting] = useState(false)
   const [isVerifying, setIsVerifying] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
   const [googleEmail, setGoogleEmail] = useState<string | null>(null)
-  const [businessUrl, setBusinessUrl] = useState("")
-  const [manualBusinessName, setManualBusinessName] = useState("")
-  const [businessData, setBusinessData] = useState<GoogleBusinessData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Google sign-in worked, but the Business Profile permission box wasn't ticked
+  const [needsPermission, setNeedsPermission] = useState(false)
   const [isCheckingExisting, setIsCheckingExisting] = useState(true)
   const [ownershipVerified, setOwnershipVerified] = useState(false)
   const [managedBusinessesFull, setManagedBusinessesFull] = useState<Array<{
@@ -81,6 +60,66 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
     accountName: string
   }>>([])
   const [selectedBusinessIndex, setSelectedBusinessIndex] = useState<number | null>(null)
+  // Live Google details for each business, keyed by location id
+  const [previews, setPreviews] = useState<Record<string, BusinessPreview | null>>({})
+  // The business that is connected (shown on the "connected" screen)
+  const [connected, setConnected] = useState<BusinessPreview | null>(null)
+
+  const loadPreview = async (locationId: string): Promise<BusinessPreview | null> => {
+    try {
+      const res = await fetch(`/api/google/business-preview?locationId=${encodeURIComponent(locationId)}`)
+      if (!res.ok) return null
+      return ((await res.json()).business as BusinessPreview) ?? null
+    } catch { return null }
+  }
+
+  // Fetch the details for every business on the list (in parallel)
+  useEffect(() => {
+    const missing = managedBusinessesFull.filter((b) => b.locationId && !(b.locationId in previews))
+    if (!missing.length) return
+    setPreviews((p) => ({ ...p, ...Object.fromEntries(missing.map((b) => [b.locationId, null])) }))
+    missing.forEach(async (b) => {
+      const preview = await loadPreview(b.locationId)
+      setPreviews((p) => ({ ...p, [b.locationId]: preview ?? {
+        locationId: b.locationId, placeId: b.placeId, name: b.businessName, category: null, address: b.address,
+        phone: null, website: null, mapsUrl: null, rating: null, totalReviews: 0, lat: null, lng: null,
+        openNow: null, hours: [], reviews: [], logoUrl: null, coverUrl: null,
+      } }))
+    })
+    // Only one business: select it for them
+    if (managedBusinessesFull.length === 1) setSelectedBusinessIndex(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [managedBusinessesFull])
+
+  // The side panel shows the business only once it's connected (until then: what VLYR does)
+  useEffect(() => {
+    onPreview?.(connected ? { name: connected.name, rating: connected.rating, totalReviews: connected.totalReviews, logoUrl: connected.logoUrl } : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected])
+
+  /** Hand everything to the next steps so "Your business" opens filled in. */
+  const shareBusiness = (b: {
+    name: string; category: string | null; logoUrl: string | null; placeId: string | null; address: string | null
+    phone: string | null; website: string | null; lat: number | null; lng: number | null; rating: number | null
+    totalReviews: number | null; reviews?: BusinessPreview["reviews"]
+  }) => {
+    onChange({
+      // Only the chosen business's own values: never keep a previous business's
+      businessName: b.name,
+      businessCategory: normalizeCategory(b.category),
+      logoUrl: b.logoUrl,
+      googlePlaceId: b.placeId ?? "",
+      googleAddress: b.address ?? "",
+      googlePhone: b.phone ?? "",
+      googleWebsite: b.website ?? "",
+      lat: b.lat,
+      lng: b.lng,
+      googleRating: b.rating,
+      googleReviewCount: b.totalReviews,
+      googleConnected: true,
+      ...(b.reviews ? { googleReviewsSnapshot: b.reviews.map((r) => ({ author: r.author, rating: r.rating, text: r.text, relativeTime: r.relativeTime })) } : {}),
+    })
+  }
 
   // ── All logic below is unchanged ──────────────────────────────────────────
 
@@ -109,42 +148,43 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
 
       const supabase = createClient()
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        if (authError) {
-          await supabase.auth.signOut()
-          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
-          if (refreshError || !refreshData.user) { setIsCheckingExisting(false); return }
-          const refreshedUser = refreshData.user
-          const { data: merchant } = await supabase.from("merchants")
-            .select("google_connected, google_account_name, google_location_id, google_email")
-            .eq("id", refreshedUser.id).single()
-          if (merchant?.google_connected && merchant?.google_location_id) {
-            await fetchAndSetBusinessDetails(merchant.google_location_id, merchant.google_account_name)
-            setGoogleEmail(merchant.google_email || null)
-            setStep("verified")
-          } else if (merchant?.google_email) {
-            setGoogleEmail(merchant.google_email)
-            setStep("select-business")
-          }
-          setIsCheckingExisting(false)
-          return
+        let { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          const { data: refreshed } = await supabase.auth.refreshSession()
+          user = refreshed.user
         }
         if (user) {
           const { data: merchant } = await supabase.from("merchants")
-            .select("google_connected, google_account_name, google_location_id, google_email")
+            .select("google_email, google_managed_businesses, google_ownership_verified, google_verified_location_id, google_verified_place_id, business_name, business_category, logo_url, address, google_address, google_phone, google_website, lat, lng, google_rating, google_review_count")
             .eq("id", user.id).single()
-          if (merchant?.google_connected && merchant?.google_location_id) {
-            await fetchAndSetBusinessDetails(merchant.google_location_id, merchant.google_account_name)
+          if (merchant?.google_ownership_verified) {
+            // Already connected: show it, and fill the next step from what we saved
             setGoogleEmail(merchant.google_email || null)
+            setOwnershipVerified(true)
             setStep("verified")
             setIsCheckingExisting(false)
+            shareBusiness({
+              name: merchant.business_name || "", category: merchant.business_category, logoUrl: merchant.logo_url,
+              placeId: merchant.google_verified_place_id, address: merchant.google_address || merchant.address,
+              phone: merchant.google_phone, website: merchant.google_website, lat: merchant.lat, lng: merchant.lng,
+              rating: merchant.google_rating, totalReviews: merchant.google_review_count,
+            })
+            const preview = merchant.google_verified_location_id ? await loadPreview(merchant.google_verified_location_id) : null
+            setConnected(preview ? { ...preview, logoUrl: merchant.logo_url || preview.logoUrl } : {
+              locationId: merchant.google_verified_location_id || "", placeId: merchant.google_verified_place_id, name: merchant.business_name || "Your business",
+              category: merchant.business_category, address: merchant.google_address || merchant.address, phone: merchant.google_phone,
+              website: merchant.google_website, mapsUrl: null, rating: merchant.google_rating, totalReviews: merchant.google_review_count ?? 0,
+              lat: merchant.lat, lng: merchant.lng, openNow: null, hours: [], reviews: [], logoUrl: merchant.logo_url, coverUrl: null,
+            })
             return
           }
           if (merchant?.google_email) {
+            // Signed in with Google but no business picked yet
             setGoogleEmail(merchant.google_email)
             setStep("select-business")
-            setIsCheckingExisting(false)
-            return
+            const saved = typeof merchant.google_managed_businesses === "string" ? JSON.parse(merchant.google_managed_businesses) : merchant.google_managed_businesses
+            if (Array.isArray(saved) && saved.length) setManagedBusinessesFull(saved)
+            else fetchBusinesses()
           }
         }
       } catch { /* continue */ }
@@ -153,70 +193,7 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
     initialize()
   }, [])
 
-  const fetchAndSetBusinessDetails = async (placeId: string, businessName: string | null) => {
-    try {
-      const res = await fetch(`/api/google/verify?placeId=${encodeURIComponent(placeId)}`)
-      if (res.ok) {
-        const details = await res.json()
-        if (details.success) {
-          setBusinessData({ placeId: details.placeId || placeId, businessName: details.businessName || businessName || "Your Business", address: details.address || "", phone: details.phone || null, category: details.category || "", lat: details.lat || null, lng: details.lng || null, website: details.website || null, googleMapsUrl: details.googleMapsUrl || null, reviewUrl: details.reviewUrl || `https://search.google.com/local/writereview?placeid=${placeId}`, rating: details.rating || null, totalReviews: details.totalReviews || 0, logoUrl: details.logoUrl || null, openingHours: details.openingHours || null, reviews: details.reviews || [] })
-          onChange({ businessName: details.businessName || businessName, businessCategory: details.category || data.businessCategory, googlePlaceId: details.placeId || placeId, lat: details.lat, lng: details.lng, logoUrl: details.logoUrl || data.logoUrl })
-        }
-      }
-    } catch {
-      setBusinessData({ placeId, businessName: businessName || "Your Business", address: "", phone: null, category: "", lat: null, lng: null, website: null, googleMapsUrl: null, reviewUrl: `https://search.google.com/local/writereview?placeid=${placeId}`, rating: null, totalReviews: 0, logoUrl: null, openingHours: null, reviews: [] })
-    }
-  }
 
-  const handleManualVerification = async () => {
-    if (!businessUrl.trim() || !manualBusinessName.trim()) { setError("Please enter both a Maps link and your business name"); return }
-    setIsVerifying(true)
-    setError(null)
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setError("Session expired. Please refresh and try again."); setIsVerifying(false); return }
-      const verifyRes = await fetch("/api/google/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: businessUrl.trim(), businessName: manualBusinessName.trim() }) })
-      const verifyData = await verifyRes.json()
-      if (!verifyData.success) throw new Error(verifyData.error || "Failed to resolve business URL")
-      const runOwnershipCheck = async () => fetch("/api/google/verify-ownership", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ placeId: verifyData.placeId, businessName: verifyData.businessName || manualBusinessName.trim(), businessAddress: verifyData.address }) }).then(r => r.json())
-      let ownershipData = await runOwnershipCheck()
-      if (!ownershipData.success && ownershipData.code === "NO_MANAGED_BUSINESSES") {
-        const refetchRes = await fetch("/api/google/businesses")
-        const refetchData = await refetchRes.json()
-        if (refetchData.success && refetchData.businesses?.length > 0) ownershipData = await runOwnershipCheck()
-      }
-      if (!ownershipData.success) {
-        if (ownershipData.code === "NOT_AUTHORIZED") setError(`This business isn't managed by ${googleEmail}. Sign in with the account that manages "${manualBusinessName.trim()}".`)
-        else if (ownershipData.code === "MISSING_SCOPE") setError("Google Business Profile access wasn't granted. Please sign in again and approve all permissions.")
-        else if (ownershipData.code === "NO_MANAGED_BUSINESSES") setError("Google's API is temporarily unavailable. Wait 1–2 minutes and try again.")
-        else setError(ownershipData.error || "Verification failed. Please try again.")
-        setIsVerifying(false)
-        return
-      }
-      const matchType = ownershipData.matchType ?? "VERIFIED"
-      void matchType // ownership was recorded by the server in /api/google/verify-ownership
-      const { error: updateError } = await supabase.from("merchants").update({ business_name: verifyData.businessName || manualBusinessName.trim(), business_category: verifyData.category || null, google_rating: verifyData.rating, google_review_count: verifyData.totalReviews, google_address: verifyData.address, google_phone: verifyData.phone, google_website: verifyData.website, lat: verifyData.lat, lng: verifyData.lng }).eq("id", user.id)
-      if (updateError) throw new Error(updateError.message)
-      setBusinessData({ placeId: verifyData.placeId || "", businessName: verifyData.businessName || manualBusinessName.trim(), address: verifyData.address || "", phone: verifyData.phone ?? null, category: verifyData.category || "", lat: verifyData.lat ?? null, lng: verifyData.lng ?? null, website: verifyData.website ?? null, googleMapsUrl: verifyData.googleMapsUrl || businessUrl, reviewUrl: verifyData.reviewUrl || (verifyData.placeId ? `https://search.google.com/local/writereview?placeid=${verifyData.placeId}` : ""), rating: verifyData.rating ?? null, totalReviews: verifyData.totalReviews ?? 0, logoUrl: verifyData.logoUrl ?? null, openingHours: verifyData.openingHours ?? null, reviews: verifyData.reviews ?? [] })
-      onChange({
-        googleRating: verifyData.rating ?? undefined,
-        googleReviewCount: verifyData.totalReviews ?? undefined,
-        googleConnected: true,
-        googleReviewsSnapshot: (verifyData.reviews ?? [])
-          .slice(0, 6)
-          .map((r: ReviewSnapshot) => ({ author: r.author, rating: r.rating, text: r.text, relativeTime: r.relativeTime })),
-      })
-      // Fill address, phone, photo, etc. from Google (only empty fields)
-      fetch("/api/google/sync-profile", { method: "POST" }).catch(() => {})
-      setOwnershipVerified(true)
-      setStep("verified")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to verify business")
-    } finally {
-      setIsVerifying(false)
-    }
-  }
 
   const handleSelectBusiness = async () => {
     if (selectedBusinessIndex === null || !managedBusinessesFull[selectedBusinessIndex]) { setError("Please select a business from the list"); return }
@@ -224,19 +201,9 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
     setError(null)
     const selectedBusiness = managedBusinessesFull[selectedBusinessIndex]
     try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setError("Session expired. Please refresh and try again."); setIsVerifying(false); return }
-      type FullDetails = { success: boolean; placeId: string; businessName: string; address: string; phone: string | null; category: string; lat: number | null; lng: number | null; website: string | null; googleMapsUrl: string | null; reviewUrl: string; rating: number | null; totalReviews: number; logoUrl: string | null; openingHours: string[] | null; reviews: Array<{ author: string; rating: number; text: string; time: number; relativeTime: string; authorPhoto?: string | null }> }
-      let full: FullDetails | null = null
-      if (selectedBusiness.placeId && !selectedBusiness.placeId.startsWith("cid:")) {
-        try {
-          const fullRes = await fetch(`/api/google/verify?placeId=${encodeURIComponent(selectedBusiness.placeId)}`)
-          if (fullRes.ok) { const d = await fullRes.json(); if (d.success) full = d }
-        } catch { /* silent */ }
-      }
       // The server confirms this business is in the list Google returned and
-      // that no other VLYR account has it, then records the ownership
+      // that no other VLYR account has it, records the ownership, imports the
+      // Google logo and fills in the profile
       const claimRes = await fetch("/api/google/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -244,16 +211,30 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
       })
       const claim = await claimRes.json()
       if (!claim.success) throw new Error(claim.error || "We couldn't verify that business.")
-      const { error: updateError } = await supabase.from("merchants").update({ business_name: full?.businessName || selectedBusiness.businessName, business_category: full?.category || null, google_rating: full?.rating ?? null, google_review_count: full?.totalReviews ?? null, google_address: full?.address || selectedBusiness.address || null, google_phone: full?.phone ?? null, google_website: full?.website ?? null, lat: full?.lat ?? null, lng: full?.lng ?? null }).eq("id", user.id)
-      if (updateError) throw new Error(updateError.message)
-      setBusinessData({ placeId: full?.placeId || selectedBusiness.placeId || "", businessName: full?.businessName || selectedBusiness.businessName, address: full?.address || selectedBusiness.address || "", phone: full?.phone ?? null, category: full?.category || "", lat: full?.lat ?? null, lng: full?.lng ?? null, website: full?.website ?? null, googleMapsUrl: full?.googleMapsUrl ?? null, reviewUrl: full?.reviewUrl || (selectedBusiness.placeId ? `https://search.google.com/local/writereview?placeid=${selectedBusiness.placeId}` : ""), rating: full?.rating ?? null, totalReviews: full?.totalReviews ?? 0, logoUrl: full?.logoUrl ?? null, openingHours: full?.openingHours ?? null, reviews: full?.reviews ?? [] })
-      onChange({
-        googleRating: full?.rating ?? undefined,
-        googleReviewCount: full?.totalReviews ?? undefined,
-        googleConnected: true,
-        googleReviewsSnapshot: (full?.reviews ?? [])
-          .slice(0, 6)
-          .map((r: ReviewSnapshot) => ({ author: r.author, rating: r.rating, text: r.text, relativeTime: r.relativeTime })),
+      const preview = previews[selectedBusiness.locationId] ?? (await loadPreview(selectedBusiness.locationId))
+      const saved = claim.business ?? {}
+      const merged: BusinessPreview = {
+        ...(preview ?? {
+          locationId: selectedBusiness.locationId, placeId: selectedBusiness.placeId, name: selectedBusiness.businessName,
+          category: null, address: selectedBusiness.address, phone: null, website: null, mapsUrl: null, rating: null,
+          totalReviews: 0, lat: null, lng: null, openNow: null, hours: [], reviews: [], logoUrl: null, coverUrl: null,
+        }),
+        logoUrl: saved.logoUrl || preview?.logoUrl || null,
+      }
+      setConnected(merged)
+      shareBusiness({
+        name: saved.businessName || merged.name,
+        category: saved.businessCategory || merged.category,
+        logoUrl: saved.logoUrl || null,
+        placeId: merged.placeId,
+        address: saved.address || merged.address,
+        phone: saved.phone || merged.phone,
+        website: saved.website || merged.website,
+        lat: saved.lat ?? merged.lat,
+        lng: saved.lng ?? merged.lng,
+        rating: saved.rating ?? merged.rating,
+        totalReviews: saved.totalReviews ?? merged.totalReviews,
+        reviews: merged.reviews,
       })
       setOwnershipVerified(true)
       setStep("verified")
@@ -303,6 +284,7 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
   const fetchBusinesses = async () => {
     setIsRetrying(true)
     setError(null)
+    setNeedsPermission(false)
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -321,27 +303,21 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
         const apiErrors: string[] = result.errors ?? []
         const isRateLimit = apiErrors.some((e: string) => e.includes("429") || e.toLowerCase().includes("rate"))
         const isPermission = apiErrors.some((e: string) => e.includes("403") || e.toLowerCase().includes("permission") || e.toLowerCase().includes("denied"))
-        if (isRateLimit) setError("Google is rate-limiting right now. Paste your Google Maps link below to continue.")
-        else if (isPermission) setError("Business Profile API access was denied. Sign in again and approve all permissions.")
-        else if (apiErrors.length > 0) setError(`Couldn't load businesses: ${apiErrors[0]}`)
-        else setError("No businesses found. Try a different Google account, or paste your Maps link below.")
+        if (isPermission) setNeedsPermission(true)
+        else if (isRateLimit) setError("Google is busy right now. Wait a minute and tap “Check my Google account again”.")
+        else if (apiErrors.length > 0) setError("We couldn't reach your Google Business Profile just now. Please try again in a moment.")
       }
     } catch { setError("Couldn't reach Google. Check your connection and try again.") }
     finally { setIsRetrying(false) }
   }
 
-  const handleDisconnect = async () => {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    await supabase.from("merchants").update({ google_connected: false, google_location_id: null, google_account_name: null, google_email: null }).eq("id", user.id)
-    setStep("google-signin")
-    setBusinessData(null)
-    setGoogleEmail(null)
-    setManagedBusinessesFull([])
+  /** Pick a different business from the same Google account. */
+  const handleDisconnect = () => {
+    setConnected(null)
+    setOwnershipVerified(false)
     setSelectedBusinessIndex(null)
-    setBusinessUrl("")
-    onChange({ googlePlaceId: undefined })
+    setStep("select-business")
+    if (!managedBusinessesFull.length) fetchBusinesses()
   }
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -366,7 +342,7 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
 
       {/* ── STATE 1: Google Sign-In ────────────────────────────────────────── */}
       {step === "google-signin" && (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 max-w-lg mx-auto w-full">
           {/* Header */}
           <div>
             <h2 className="text-2xl font-bold text-[#0A0A0A] tracking-tight mb-1">
@@ -439,128 +415,57 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
           <p className="text-center text-[10px] text-[#CCCCCC] leading-relaxed -mt-1">
             Your shield activates once Google is connected from the dashboard.
           </p>
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full border border-[#E5E5E5] bg-white text-[#0A0A0A] text-sm font-semibold hover:border-[#0A0A0A] transition-all"
+            >
+              <ArrowLeft size={15} /> Back
+            </button>
+          )}
         </div>
       )}
 
-      {/* ── STATE 2: Select / Link business ───────────────────────────────── */}
-      {step === "select-business" && (
-        <div className="flex flex-col gap-5">
-          {/* Header */}
-          <div>
-            <h2 className="text-2xl font-bold text-[#0A0A0A] tracking-tight mb-1">
-              {managedBusinessesFull.length > 0 ? "Which business is yours?" : "Find your business"}
-            </h2>
-            <p className="text-sm text-[#666666] leading-relaxed">
-              {managedBusinessesFull.length > 0
-                ? "Select the location you want to connect to VLYR."
-                : "Open Google Maps, find your business, tap Share, and paste the link below."}
+      {/* ── STATE 2a: Pick one of the owner's Google businesses ───────────── */}
+      {step === "select-business" && managedBusinessesFull.length > 0 && (
+        <div className="flex flex-col gap-7">
+          <div className="flex flex-col gap-2">
+            <div>
+              <div className="flex items-center gap-2.5 px-3 py-1.5 bg-[#f0fdf4] border border-[#00a544]/20 rounded-full w-fit mb-4">
+                <GoogleIcon size={14} />
+                <span className="text-xs font-semibold text-[#166534] truncate max-w-[260px]">{googleEmail}</span>
+                <button
+                  onClick={() => { setStep("google-signin"); setGoogleEmail(null); setManagedBusinessesFull([]); setSelectedBusinessIndex(null); setError(null); setNeedsPermission(false) }}
+                  className="text-[11px] text-[#666666] hover:text-[#0A0A0A] underline underline-offset-2"
+                >
+                  Switch account
+                </button>
+              </div>
+              <h2 className="text-3xl font-bold text-[#0A0A0A] tracking-tight">Your Google Business Profiles</h2>
+              <p className="text-[15px] text-[#666666] mt-1.5 max-w-2xl leading-relaxed">
+                {managedBusinessesFull.length === 1
+                  ? "Here's the business you manage on Google. Confirm it and VLYR will start protecting its reputation."
+                  : `You manage ${managedBusinessesFull.length} businesses on Google. Choose the one VLYR should protect first.`}
+              </p>
+            </div>
+            <p className="text-xs text-[#888888] flex items-center gap-1.5">
+              <Lock size={11} /> Live details from Google · only you can see them
             </p>
           </div>
 
-          {/* Signed-in pill */}
-          <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[#f0fdf4] border border-[#00a544]/20 rounded-full w-fit">
-            <CheckCircle2 size={14} className="text-[#00a544] shrink-0" />
-            <span className="text-sm font-semibold text-[#166534] truncate max-w-[220px]">{googleEmail}</span>
-            <button
-              onClick={() => { setStep("google-signin"); setGoogleEmail(null); setManagedBusinessesFull([]); setSelectedBusinessIndex(null) }}
-              className="text-xs text-[#888888] hover:text-[#0A0A0A] transition-colors ml-1 underline underline-offset-2"
-            >
-              Change
-            </button>
+          <div className={`grid gap-5 ${managedBusinessesFull.length === 1 ? "grid-cols-1" : "grid-cols-1 2xl:grid-cols-2"}`}>
+            {managedBusinessesFull.map((business, index) => (
+              <BusinessProfileCard
+                key={business.locationId || index}
+                business={previews[business.locationId] ?? null}
+                fallbackName={business.businessName}
+                fallbackAddress={business.address}
+                selected={selectedBusinessIndex === index}
+                onSelect={() => { setSelectedBusinessIndex(index); setError(null) }}
+              />
+            ))}
           </div>
 
-          {/* ── Businesses found: pick one ── */}
-          {managedBusinessesFull.length > 0 && (
-            <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-0.5">
-              {managedBusinessesFull.map((business, index) => {
-                const isSelected = selectedBusinessIndex === index
-                return (
-                  <button
-                    key={business.locationId || index}
-                    onClick={() => setSelectedBusinessIndex(index)}
-                    className={`w-full p-4 rounded-2xl border-2 text-left transition-all duration-150 ${
-                      isSelected
-                        ? "border-[#0A0A0A] bg-[#0A0A0A] text-white"
-                        : "border-[#E5E5E5] bg-[#FAFAFA] hover:border-[#0A0A0A]/30 hover:bg-white"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isSelected ? "bg-white/10" : "bg-[#F0F0F0]"}`}>
-                        <Building2 size={18} className={isSelected ? "text-white" : "text-[#888888]"} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-semibold truncate ${isSelected ? "text-white" : "text-[#0A0A0A]"}`}>
-                          {business.businessName}
-                        </p>
-                        {business.address && (
-                          <p className={`text-xs mt-0.5 flex items-center gap-1 truncate ${isSelected ? "text-white/60" : "text-[#888888]"}`}>
-                            <MapPin size={10} className="shrink-0" />
-                            {business.address}
-                          </p>
-                        )}
-                      </div>
-                      {isSelected && (
-                        <div className="w-5 h-5 rounded-full bg-[#FFE100] flex items-center justify-center shrink-0">
-                          <CheckCircle2 size={12} className="text-[#0A0A0A]" />
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-
-          {/* ── No businesses: URL paste flow ── */}
-          {managedBusinessesFull.length === 0 && (
-            <div className="flex flex-col gap-4">
-              {/* How to get the link */}
-              <div className="flex items-start gap-3 p-4 bg-[#FAFAFA] border border-[#E5E5E5] rounded-2xl">
-                <div className="w-8 h-8 rounded-lg bg-[#0A0A0A] flex items-center justify-center shrink-0 mt-0.5">
-                  <ExternalLink size={14} className="text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-[#0A0A0A] mb-1">How to get your link</p>
-                  <ol className="text-xs text-[#666666] leading-relaxed space-y-0.5">
-                    <li>1. Open Google Maps on your phone</li>
-                    <li>2. Search for your business</li>
-                    <li>3. Tap <strong>Share</strong> → <strong>Copy link</strong></li>
-                    <li>4. Paste it below</li>
-                  </ol>
-                </div>
-              </div>
-
-              {/* Inputs */}
-              <div className="flex flex-col gap-2.5">
-                <input
-                  type="url"
-                  value={businessUrl}
-                  onChange={(e) => { setBusinessUrl(e.target.value); setError(null) }}
-                  placeholder="Paste your Google Maps link…"
-                  className="w-full h-12 px-4 rounded-xl bg-[#FAFAFA] border border-[#E5E5E5] text-sm text-[#0A0A0A] placeholder:text-[#AAAAAA] focus:outline-none focus:border-[#0A0A0A] transition-colors"
-                />
-                <input
-                  type="text"
-                  value={manualBusinessName}
-                  onChange={(e) => setManualBusinessName(e.target.value)}
-                  placeholder="Your business name"
-                  className="w-full h-12 px-4 rounded-xl bg-[#FAFAFA] border border-[#E5E5E5] text-sm text-[#0A0A0A] placeholder:text-[#AAAAAA] focus:outline-none focus:border-[#0A0A0A] transition-colors"
-                />
-              </div>
-
-              {/* Retry as secondary link */}
-              <button
-                onClick={fetchBusinesses}
-                disabled={isRetrying}
-                className="flex items-center justify-center gap-1.5 text-sm text-[#888888] hover:text-[#0A0A0A] transition-colors disabled:opacity-40 self-center"
-              >
-                <RefreshCw size={12} className={isRetrying ? "animate-spin" : ""} />
-                {isRetrying ? "Checking your account…" : "Try auto-detecting businesses instead"}
-              </button>
-            </div>
-          )}
-
-          {/* Error — inline, not a banner */}
           <AnimatePresence>
             {error && (
               <motion.p
@@ -572,138 +477,205 @@ export function StepGoogleConnect({ data, onChange, onNext, onBack }: StepGoogle
             )}
           </AnimatePresence>
 
-          {/* Primary CTA */}
-          {managedBusinessesFull.length > 0 ? (
-            <button
-              onClick={handleSelectBusiness}
-              disabled={selectedBusinessIndex === null || isVerifying}
-              className="w-full h-13 rounded-full bg-[#0A0A0A] text-white font-bold text-sm hover:bg-[#1F1F1F] hover:rounded-2xl disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2"
-            >
-              {isVerifying ? <><Loader2 size={16} className="animate-spin" /> Connecting…</> : <>Connect Business <ArrowRight size={16} /></>}
-            </button>
-          ) : (
-            <button
-              onClick={handleManualVerification}
-              disabled={isVerifying || !businessUrl.trim() || !manualBusinessName.trim()}
-              className="w-full h-13 rounded-full bg-[#0A0A0A] text-white font-bold text-sm hover:bg-[#1F1F1F] hover:rounded-2xl disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2"
-            >
-              {isVerifying ? <><Loader2 size={16} className="animate-spin" /> Verifying…</> : <>Connect My Business <ArrowRight size={16} /></>}
-            </button>
+          {/* Action bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-3xl bg-[#FAFAFA] border border-[#EDEDED] p-3 pl-5">
+            <p className="text-sm text-[#555555] flex-1">
+              {selectedBusinessIndex !== null
+                ? <>Connecting <span className="font-semibold text-[#0A0A0A]">{previews[managedBusinessesFull[selectedBusinessIndex].locationId]?.name || managedBusinessesFull[selectedBusinessIndex].businessName}</span>. We&apos;ll import its logo, details and reviews.</>
+                : "Select a business above to continue."}
+            </p>
+            <div className="flex items-center gap-2">
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  className="flex items-center justify-center gap-1.5 h-12 px-5 rounded-full border border-[#E5E5E5] bg-white text-[#0A0A0A] text-sm font-semibold hover:border-[#0A0A0A] transition-all"
+                >
+                  <ArrowLeft size={15} /> Back
+                </button>
+              )}
+              <button
+                onClick={handleSelectBusiness}
+                disabled={selectedBusinessIndex === null || isVerifying}
+                className="h-12 px-7 rounded-full bg-[#0A0A0A] text-white font-bold text-sm hover:bg-[#1F1F1F] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              >
+                {isVerifying ? <><Loader2 size={16} className="animate-spin" /> Connecting…</> : <>Connect business <ArrowRight size={16} /></>}
+              </button>
+            </div>
+          </div>
+
+          {managedBusinessesFull.length > 1 && (
+            <p className="text-xs text-[#999999] -mt-3">
+              Run several businesses? Connect one now. You&apos;ll be able to add the others to the same VLYR account soon.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── STATE 2a: Business Profile permission wasn't granted ─────────── */}
+      {step === "select-business" && managedBusinessesFull.length === 0 && needsPermission && !isRetrying && (
+        <div className="flex flex-col gap-5 max-w-lg mx-auto w-full">
+          <div className="w-12 h-12 rounded-2xl bg-[#FFFBDA] border border-[#F3E27A] flex items-center justify-center">
+            <KeyRound size={20} className="text-[#8A7400]" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-[#0A0A0A] tracking-tight mb-1">One more permission needed</h2>
+            <p className="text-sm text-[#666666] leading-relaxed">
+              You&apos;re signed in, but Google didn&apos;t share your Business Profile with VLYR. That happens when the
+              business listings box is left unticked on Google&apos;s sign-in screen.
+            </p>
+          </div>
+
+          {googleEmail && (
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-full w-fit">
+              <Mail size={14} className="text-[#666666] shrink-0" />
+              <span className="text-sm font-semibold text-[#0A0A0A] truncate max-w-[260px]">{googleEmail}</span>
+            </div>
           )}
 
-          {/* Switch account — bottom text link */}
+          <div className="rounded-2xl border border-[#E5E5E5] bg-[#FAFAFA] p-4 flex flex-col gap-3">
+            <p className="text-sm font-semibold text-[#0A0A0A]">How to fix it</p>
+            <ol className="text-sm text-[#595959] leading-relaxed space-y-1.5">
+              <li>1. Tap <strong className="text-[#0A0A0A]">Allow access</strong> below.</li>
+              <li>2. Choose <strong className="text-[#0A0A0A]">{googleEmail || "your Google account"}</strong>.</li>
+              <li>3. Tick the box for your <strong className="text-[#0A0A0A]">Google business listings</strong>, then tap Continue.</li>
+            </ol>
+          </div>
+
+          <div className="flex items-start gap-2.5 text-xs text-[#666666] leading-relaxed">
+            <ShieldCheck size={15} className="text-[#137333] shrink-0 mt-0.5" />
+            VLYR uses this to confirm you manage the business and to watch for new Google reviews. You can remove access anytime in your Google account.
+          </div>
+
+          <button
+            onClick={handleGoogleSignIn}
+            disabled={isConnecting}
+            className="w-full h-13 rounded-full bg-[#0A0A0A] text-white font-bold text-sm hover:bg-[#1F1F1F] disabled:opacity-40 transition-all flex items-center justify-center gap-2"
+          >
+            {isConnecting ? <Loader2 size={16} className="animate-spin" /> : <>Allow access <ArrowRight size={16} /></>}
+          </button>
+
           <p className="text-center text-sm text-[#888888]">
-            Wrong account?{" "}
+            Your business is on another account?{" "}
             <button
-              onClick={() => { setStep("google-signin"); setGoogleEmail(null); setManagedBusinessesFull([]); setSelectedBusinessIndex(null); setError(null) }}
-              className="text-[#0A0A0A] font-semibold underline underline-offset-2 hover:no-underline transition-all"
+              onClick={() => { setStep("google-signin"); setGoogleEmail(null); setManagedBusinessesFull([]); setSelectedBusinessIndex(null); setError(null); setNeedsPermission(false) }}
+              className="text-[#0A0A0A] font-semibold underline underline-offset-2 hover:no-underline"
             >
-              Sign in with a different Google account
+              Use a different Google account
             </button>
           </p>
 
-          {/* Privacy note */}
-          <p className="text-center text-xs text-[#CCCCCC] flex items-center justify-center gap-1">
-            <Lock size={9} /> Your data is never shared or sold
-          </p>
+          {onBack && (
+            <button onClick={onBack} className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full border border-[#E5E5E5] bg-white text-[#0A0A0A] text-sm font-semibold hover:border-[#0A0A0A] transition-all">
+              <ArrowLeft size={15} /> Back
+            </button>
+          )}
         </div>
       )}
 
-      {/* ── STATE 3: Verified ─────────────────────────────────────────────── */}
-      {step === "verified" && businessData && ownershipVerified && (
-        <div className="flex flex-col gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-[#0A0A0A] tracking-tight mb-1">Business connected</h2>
-            <p className="text-sm text-[#666666]">Your Google Business Profile is linked to VLYR.</p>
-          </div>
-
-          {/* Business card */}
-          <div className="p-5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-2xl space-y-4">
-            <div className="flex items-start gap-4">
-              {businessData.logoUrl ? (
-                <img src={businessData.logoUrl} alt={businessData.businessName} className="w-14 h-14 rounded-xl object-cover border border-[#E5E5E5] shrink-0" />
-              ) : (
-                <div className="w-14 h-14 rounded-xl bg-[#F0F0F0] border border-[#E5E5E5] flex items-center justify-center shrink-0">
-                  <Building2 size={22} className="text-[#888888]" />
+      {/* ── STATE 2b: This Google account manages no business ───────────── */}
+      {step === "select-business" && managedBusinessesFull.length === 0 && !(needsPermission && !isRetrying) && (
+        <div className="flex flex-col gap-6 max-w-lg mx-auto w-full">
+          {isRetrying ? (
+            <div className="flex flex-col items-center text-center gap-3 py-16">
+              <Loader2 size={26} className="animate-spin text-[#0A0A0A]" />
+              <p className="text-sm text-[#666666]">Looking for businesses on {googleEmail ?? "your Google account"}…</p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-[#F3F3F3] flex items-center justify-center mb-4">
+                  <Building2 size={21} className="text-[#0A0A0A]" />
                 </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                  <h3 className="text-base font-bold text-[#0A0A0A] truncate">{businessData.businessName}</h3>
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#f0fdf4] text-[#166534] border border-[#00a544]/20 uppercase tracking-wider shrink-0">
-                    Connected
-                  </span>
-                </div>
-                {businessData.category && <p className="text-sm text-[#888888]">{businessData.category}</p>}
-                {businessData.rating && (
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} size={12} className={i < Math.round(businessData.rating!) ? "fill-[#FFE100] text-[#FFE100]" : "text-[#E5E5E5] fill-[#E5E5E5]"} />
-                    ))}
-                    <span className="text-xs font-bold text-[#0A0A0A]">{businessData.rating}</span>
-                    <span className="text-sm text-[#888888]">({businessData.totalReviews.toLocaleString()} reviews)</span>
-                  </div>
-                )}
+                <h2 className="text-2xl font-bold text-[#0A0A0A] tracking-tight mb-1.5">No business on this account</h2>
+                <p className="text-sm text-[#666666] leading-relaxed">
+                  <span className="font-semibold text-[#0A0A0A]">{googleEmail ?? "This Google account"}</span> doesn&apos;t own or manage a
+                  Google Business Profile. VLYR connects to the profile your account manages, so customers&apos; reviews go to the right place.
+                </p>
               </div>
-            </div>
 
-            <div className="h-px bg-[#E5E5E5]" />
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={() => { setStep("google-signin"); setGoogleEmail(null); setManagedBusinessesFull([]); setSelectedBusinessIndex(null); setError(null); setNeedsPermission(false) }}
+                  className="group flex items-center gap-3.5 rounded-2xl border border-[#E5E5E5] p-4 text-left hover:border-[#0A0A0A] transition-colors"
+                >
+                  <span className="w-10 h-10 rounded-xl bg-[#0A0A0A] text-white flex items-center justify-center shrink-0"><LogIn size={17} /></span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[#0A0A0A]">Use a different Google account</span>
+                    <span className="block text-xs text-[#888888] mt-0.5">It&apos;s my business, but it&apos;s on another account</span>
+                  </span>
+                  <ArrowRight size={15} className="text-[#AAAAAA] group-hover:text-[#0A0A0A] transition-colors" />
+                </button>
+                <a
+                  href="https://support.google.com/business/answer/3403100"
+                  target="_blank" rel="noopener noreferrer"
+                  className="group flex items-center gap-3.5 rounded-2xl border border-[#E5E5E5] p-4 hover:border-[#0A0A0A] transition-colors"
+                >
+                  <span className="w-10 h-10 rounded-xl bg-[#F3F3F3] text-[#0A0A0A] flex items-center justify-center shrink-0"><UserPlus size={17} /></span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[#0A0A0A]">Get added as a manager</span>
+                    <span className="block text-xs text-[#888888] mt-0.5">I work there: ask the owner to add {googleEmail ?? "this account"} on Google</span>
+                  </span>
+                  <ExternalLink size={14} className="text-[#AAAAAA] group-hover:text-[#0A0A0A] transition-colors" />
+                </a>
+                <a
+                  href="https://business.google.com/create"
+                  target="_blank" rel="noopener noreferrer"
+                  className="group flex items-center gap-3.5 rounded-2xl border border-[#E5E5E5] p-4 hover:border-[#0A0A0A] transition-colors"
+                >
+                  <span className="w-10 h-10 rounded-xl bg-[#F3F3F3] text-[#0A0A0A] flex items-center justify-center shrink-0"><Store size={17} /></span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[#0A0A0A]">Create a free Business Profile</span>
+                    <span className="block text-xs text-[#888888] mt-0.5">I don&apos;t have one yet: set it up on Google, then come back</span>
+                  </span>
+                  <ExternalLink size={14} className="text-[#AAAAAA] group-hover:text-[#0A0A0A] transition-colors" />
+                </a>
+              </div>
 
-            <div className="space-y-2">
-              {businessData.address && (
-                <div className="flex items-start gap-2.5 text-xs">
-                  <MapPin size={13} className="text-[#888888] shrink-0 mt-0.5" />
-                  <span className="text-[#666666]">{businessData.address}</span>
-                </div>
-              )}
-              {businessData.phone && (
-                <div className="flex items-center gap-2.5 text-xs">
-                  <Phone size={13} className="text-[#888888] shrink-0" />
-                  <span className="text-[#666666]">{businessData.phone}</span>
-                </div>
-              )}
-              {businessData.website && (
-                <div className="flex items-center gap-2.5 text-xs">
-                  <Globe size={13} className="text-[#888888] shrink-0" />
-                  <a href={businessData.website} target="_blank" rel="noopener noreferrer"
-                    className="text-[#0A0A0A] underline underline-offset-2 hover:no-underline truncate">
-                    {businessData.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
+              <AnimatePresence>
+                {error && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="text-sm text-[#7A5C00] flex items-start gap-2 bg-[#FFFBEA] border border-[#F3E27A] rounded-xl px-3.5 py-2.5"
+                  >
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" /> {error}
+                  </motion.p>
+                )}
+              </AnimatePresence>
 
-          {/* Signed in as */}
-          <div className="flex items-center gap-2 px-3.5 py-2 bg-[#f0fdf4] border border-[#00a544]/20 rounded-full w-fit">
-            <Mail size={12} className="text-[#00a544]" />
-            <span className="text-xs text-[#166534] font-medium">{googleEmail}</span>
-          </div>
+              <div className="flex flex-col items-center gap-1 text-center">
+                <button
+                  onClick={fetchBusinesses}
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#0A0A0A] hover:underline underline-offset-2"
+                >
+                  <RefreshCw size={13} /> Check again
+                </button>
+                <p className="text-xs text-[#999999]">Just added as a manager or created your profile? Tap to refresh.</p>
+              </div>
+            </>
+          )}
 
-          <button onClick={handleDisconnect} className="text-xs text-[#888888] hover:text-[#0A0A0A] transition-colors self-start underline underline-offset-2">
-            Disconnect and use a different business
-          </button>
+          {onBack && !isRetrying && (
+            <button onClick={onBack} className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full border border-[#E5E5E5] bg-white text-[#0A0A0A] text-sm font-semibold hover:border-[#0A0A0A] transition-all">
+              <ArrowLeft size={15} /> Back
+            </button>
+          )}
         </div>
       )}
 
-      {/* ── Navigation ────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 pt-1">
-        <button
-          onClick={onBack}
-          className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full border border-[#E5E5E5] bg-white text-[#0A0A0A] text-sm font-semibold hover:border-[#0A0A0A] hover:rounded-2xl transition-all duration-200 flex-1"
-        >
-          <ArrowLeft size={15} /> Back
-        </button>
-
-        {step === "verified" && ownershipVerified && (
-          <button
-            onClick={onNext}
-            className="flex items-center justify-center gap-1.5 h-12 px-6 rounded-full bg-[#FFE100] text-[#0A0A0A] text-sm font-bold hover:bg-[#FFE100]/90 hover:rounded-2xl transition-all duration-200 flex-[2]"
-          >
-            Continue <ArrowRight size={15} />
-          </button>
-        )}
-      </div>
+      {/* ── STATE 3: Connected ────────────────────────────────────────────── */}
+      {step === "verified" && ownershipVerified && (connected ? (
+        <ConnectedBusiness
+          business={connected}
+          googleEmail={googleEmail}
+          onBack={handleDisconnect}
+          onNext={onNext}
+        />
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-3 py-24">
+          <Loader2 size={28} className="animate-spin text-[#0A0A0A]" />
+          <p className="text-sm text-[#888888]">Loading your business from Google…</p>
+        </div>
+      ))}
 
     </motion.div>
   )
