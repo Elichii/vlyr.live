@@ -50,19 +50,106 @@ export function appUrl(path = "") {
   return `${base}${path}`
 }
 
-/** A simple, mail-client-safe layout: heading, paragraphs (already HTML), one button. */
-export function emailLayout(o: { preheader: string; heading: string; body: string; button?: { label: string; href: string }; footer: string }) {
+/*
+ * Brand, taken from the sticker: Inter, near-black #1D1D1F on white, the
+ * sticker's #D2D2D6 hairline border, small spaced capitals, VLYR yellow as
+ * the only accent, and "POWERED BY VLYR" at the foot.
+ */
+const INK = "#1D1D1F"
+const MUTED = "#6E6E73"
+const HAIRLINE = "#D2D2D6"
+const CANVAS = "#F5F5F7"
+const YELLOW = "#FFE100"
+const FONT = "Inter,-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+
+const asset = (p: string) => `https://www.vlyr.live${p}`
+
+/** Small spaced capitals, like "TAKES LESS THAN A MINUTE" on the sticker. */
+export const eyebrow = (t: string, color = MUTED) =>
+  `<div style="font-family:${FONT};font-size:11px;line-height:16px;font-weight:500;letter-spacing:0.2em;text-transform:uppercase;color:${color}">${escapeHtml(t)}</div>`
+
+/** Five stars, filled in VLYR yellow (outlined in grey when empty). */
+export const starRow = (n: number) =>
+  `<div style="font-size:22px;line-height:26px;letter-spacing:3px">` +
+  Array.from({ length: 5 }, (_, i) => `<span style="color:${i < n ? "#FFC800" : HAIRLINE}">★</span>`).join("") +
+  `</div>`
+
+/** The customer's words, set apart with a yellow rule. */
+export const quoteBlock = (t: string) =>
+  `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate"><tr>` +
+  `<td width="3" style="background:${YELLOW};border-radius:3px;font-size:0;line-height:0">&nbsp;</td>` +
+  `<td style="background:${CANVAS};border-radius:0 12px 12px 0;padding:16px 18px;font-family:${FONT};font-size:16px;line-height:24px;color:${INK}">“${escapeHtml(t)}”</td>` +
+  `</tr></table>`
+
+/** Label / value rows with hairlines, like an Apple receipt. */
+export const detailRows = (rows: [string, string][]) =>
+  `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">` +
+  rows.map(([k, v], i) =>
+    `<tr><td style="padding:12px 0;${i ? `border-top:1px solid ${HAIRLINE};` : ""}font-family:${FONT};font-size:14px;line-height:20px;color:${MUTED}">${escapeHtml(k)}</td>` +
+    `<td align="right" style="padding:12px 0;${i ? `border-top:1px solid ${HAIRLINE};` : ""}font-family:${FONT};font-size:14px;line-height:20px;color:${INK};font-weight:500">${escapeHtml(v)}</td></tr>`,
+  ).join("") +
+  `</table>`
+
+export const paragraph = (html: string) =>
+  `<p style="margin:0 0 14px;font-family:${FONT};font-size:16px;line-height:25px;color:${INK}">${html}</p>`
+
+const spacer = (h: number) => `<tr><td style="height:${h}px;font-size:0;line-height:0">&nbsp;</td></tr>`
+
+/**
+ * The shared email shell: wordmark, eyebrow, headline, content blocks,
+ * one black pill button, then a quiet footer with "POWERED BY VLYR".
+ */
+export function emailLayout(o: {
+  preheader: string
+  eyebrow: string
+  heading: string
+  blocks: string[]
+  button?: { label: string; href: string }
+  footer: string
+}) {
   const button = o.button
-    ? `<tr><td style="padding:8px 0 24px"><a href="${escapeHtml(o.button.href)}" style="display:inline-block;background:#111111;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">${escapeHtml(o.button.label)}</a></td></tr>`
+    ? spacer(8) + `<tr><td><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="background:${INK};border-radius:980px">` +
+      `<a href="${escapeHtml(o.button.href)}" style="display:inline-block;padding:13px 26px;font-family:${FONT};font-size:15px;line-height:20px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:980px">${escapeHtml(o.button.label)}&nbsp;&rsaquo;</a>` +
+      `</td></tr></table></td></tr>`
     : ""
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f5">
-<span style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(o.preheader)}</span>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 12px"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;padding:28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#18181b">
-<tr><td style="padding-bottom:20px"><span style="display:inline-block;background:#FFE100;color:#111;font-weight:800;font-size:13px;letter-spacing:.08em;padding:4px 10px;border-radius:6px">VLYR</span></td></tr>
-<tr><td style="font-size:20px;font-weight:700;line-height:1.3;padding-bottom:12px">${escapeHtml(o.heading)}</td></tr>
-<tr><td style="font-size:15px;line-height:1.6;color:#3f3f46;padding-bottom:12px">${o.body}</td></tr>
-${button}
-<tr><td style="border-top:1px solid #e4e4e7;padding-top:16px;font-size:12px;line-height:1.5;color:#71717a">${o.footer}</td></tr>
-</table></td></tr></table></body></html>`
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light">
+<title>${escapeHtml(o.heading)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{color-scheme:light only}
+  body{margin:0;padding:0;-webkit-text-size-adjust:100%}
+  a{color:${INK}}
+  @media (max-width:600px){.card{padding:28px 22px!important;border-radius:0!important;border-left:0!important;border-right:0!important}.h1{font-size:26px!important;line-height:32px!important}}
+</style>
+</head>
+<body style="margin:0;padding:0;background:${CANVAS}">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${CANVAS}">${escapeHtml(o.preheader)}${"&nbsp;&zwnj;".repeat(40)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${CANVAS}"><tr><td align="center" style="padding:40px 0">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
+    <tr><td align="center" style="padding:0 0 24px">
+      <img src="${asset("/images/vlyr-wordmark.png")}" width="84" height="30" alt="VLYR" style="display:block;border:0;width:84px;height:auto">
+    </td></tr>
+    <tr><td class="card" style="background:#FFFFFF;border:1px solid ${HAIRLINE};border-radius:20px;padding:40px 40px 36px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td>${eyebrow(o.eyebrow)}</td></tr>
+        ${spacer(10)}
+        <tr><td class="h1" style="font-family:${FONT};font-size:30px;line-height:36px;font-weight:600;letter-spacing:-0.022em;color:${INK}">${escapeHtml(o.heading)}</td></tr>
+        ${spacer(22)}
+        ${o.blocks.map((b) => `<tr><td>${b}</td></tr>${spacer(18)}`).join("")}
+        ${button}
+      </table>
+    </td></tr>
+    <tr><td align="center" style="padding:28px 24px 0">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="font-family:${FONT};font-size:9px;line-height:14px;font-weight:500;letter-spacing:0.2em;color:${MUTED};padding-right:8px">POWERED BY</td>
+        <td><img src="${asset("/images/vlyr-wordmark.png")}" width="40" height="14" alt="VLYR" style="display:block;border:0;width:40px;height:auto"></td>
+      </tr></table>
+    </td></tr>
+    <tr><td align="center" style="padding:14px 32px 0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED}">${o.footer}</td></tr>
+  </table>
+</td></tr></table>
+</body></html>`
 }

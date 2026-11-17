@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     // Low rating: text and email the manager right away (after the customer gets their answer)
     if (rating <= 3) after(() => Promise.all([
       sendLowRatingAlert({ merchantId: ctx.merchantId, scanId, labelId: ctx.labelId, stars: rating, feedback }),
-      sendLowRatingEmail({ merchantId: ctx.merchantId, stars: rating, feedback: feedback ?? null }),
+      sendLowRatingEmail({ merchantId: ctx.merchantId, scanId, stars: rating, feedback: feedback ?? null }),
     ]))
     return NextResponse.json({ ok: true, reward })
   } catch (e) {

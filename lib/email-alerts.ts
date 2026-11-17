@@ -9,11 +9,11 @@
  * Nothing here throws: a failed email never affects ratings or setup.
  */
 import { createAdminClient } from "@/lib/supabase/admin"
-import { appUrl, emailConfigured, emailLayout, escapeHtml, sendEmail } from "@/lib/email"
+import { appUrl, detailRows, emailConfigured, emailLayout, escapeHtml, paragraph, quoteBlock, sendEmail, starRow } from "@/lib/email"
 
-const FOOTER_ALERTS = `You get these because you run this business on VLYR. <a href="${appUrl("/dashboard/feedback")}" style="color:#71717a">Turn off email alerts</a>.`
+const FOOTER_ALERTS = `You're receiving this because email alerts are on for your business. <a href="${appUrl("/dashboard/feedback")}" style="color:#6E6E73;text-decoration:underline">Manage alerts</a><br>VLYR · Mare LLC`
 
-const stars = (n: number) => "★".repeat(n) + "☆".repeat(Math.max(0, 5 - n))
+const CONTACT_LABEL: Record<string, string> = { call: "A phone call", text: "A text message", email: "An email" }
 
 export interface EmailAlertSettings {
   available: boolean
@@ -52,27 +52,61 @@ async function alertTarget(merchantId: string) {
   return { email: s.email, businessName: m?.business_name || "your business" }
 }
 
-function lowRatingEmail(o: { stars: number; businessName: string; source: string; who: string | null; feedback: string | null }) {
+export function lowRatingEmail(o: {
+  stars: number
+  businessName: string
+  source: "rating" | "Google review"
+  who: string | null
+  feedback: string | null
+  contact?: string | null
+}) {
+  const quote = o.feedback?.trim().slice(0, 1500) || null
+  const google = o.source === "Google review"
   const subject = `${o.stars}-star ${o.source} for ${o.businessName}`
-  const quote = o.feedback?.trim()
-  const body =
-    `<p style="margin:0 0 12px"><span style="color:#f59e0b;font-size:18px;letter-spacing:2px">${stars(o.stars)}</span><br>` +
-    `${o.who ? `${escapeHtml(o.who)} left` : "A customer left"} a ${o.stars}-star ${escapeHtml(o.source)} for <strong>${escapeHtml(o.businessName)}</strong>.</p>` +
-    (quote
-      ? `<p style="margin:0 0 12px;padding:12px 14px;background:#fafafa;border-left:3px solid #FFE100;border-radius:6px;font-style:italic">“${escapeHtml(quote.slice(0, 1500))}”</p>`
-      : `<p style="margin:0 0 12px;color:#71717a">No comment left.</p>`) +
-    `<p style="margin:0">Reaching out quickly is the best way to turn this around.</p>`
-  const text = `${o.who ?? "A customer"} left a ${o.stars}-star ${o.source} for ${o.businessName}.\n\n${quote ? `"${quote}"` : "No comment left."}\n\nSee it on your dashboard: ${appUrl("/dashboard/feedback")}\n\nTurn off email alerts: ${appUrl("/dashboard/feedback")}`
-  return { subject, html: emailLayout({ preheader: quote?.slice(0, 90) || subject, heading: `New ${o.stars}-star ${o.source}`, body, button: { label: "Open your feedback", href: appUrl("/dashboard/feedback") }, footer: FOOTER_ALERTS }), text }
+  const rows: [string, string][] = [
+    ["Business", o.businessName],
+    ["From", o.who || (google ? "A Google user" : "A customer")],
+    ["Where", google ? "Google Business Profile" : "VLYR sticker"],
+  ]
+  if (o.contact && CONTACT_LABEL[o.contact]) rows.push(["Prefers", CONTACT_LABEL[o.contact]])
+  const blocks = [
+    starRow(o.stars),
+    quote ? quoteBlock(quote) : paragraph(`<span style="color:#6E6E73">No comment was left.</span>`),
+    detailRows(rows),
+    paragraph(google
+      ? "A thoughtful public reply, sent soon, shows future customers you care."
+      : "This feedback came only to you. Reaching out quickly is the best way to make it right."),
+  ]
+  const html = emailLayout({
+    preheader: quote ? `“${quote.slice(0, 80)}”` : `${o.stars} out of 5 stars for ${o.businessName}`,
+    eyebrow: google ? "New Google review" : "New private feedback",
+    heading: `${o.stars} out of 5 stars`,
+    blocks,
+    button: { label: google ? "Review and reply" : "Open feedback", href: appUrl("/dashboard/feedback") },
+    footer: FOOTER_ALERTS,
+  })
+  const text = [
+    `${google ? "New Google review" : "New private feedback"}: ${o.stars} out of 5 stars`,
+    "",
+    quote ? `"${quote}"` : "No comment was left.",
+    "",
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    "",
+    `Open feedback: ${appUrl("/dashboard/feedback")}`,
+    "",
+    `Manage alerts: ${appUrl("/dashboard/feedback")}`,
+  ].join("\n")
+  return { subject, html, text }
 }
 
 /** Email the owner about a 1–3★ sticker rating. */
-export async function sendLowRatingEmail(o: { merchantId: string; stars: number; feedback: string | null }) {
+export async function sendLowRatingEmail(o: { merchantId: string; scanId: string; stars: number; feedback: string | null }) {
   try {
     if (o.stars > 3) return
     const t = await alertTarget(o.merchantId)
     if (!t) return
-    const msg = lowRatingEmail({ stars: o.stars, businessName: t.businessName, source: "rating", who: null, feedback: o.feedback })
+    const { data: scan } = await createAdminClient().from("scans").select("customer_name, contact_preference").eq("id", o.scanId).maybeSingle()
+    const msg = lowRatingEmail({ stars: o.stars, businessName: t.businessName, source: "rating", who: scan?.customer_name ?? null, feedback: o.feedback, contact: scan?.contact_preference ?? null })
     await sendEmail({ to: t.email, ...msg, tag: "low_rating" })
   } catch (e) {
     console.error("[email] low-rating email failed:", e)
@@ -103,26 +137,30 @@ export async function sendWelcomeEmail(merchantId: string) {
     const { data: m } = await createAdminClient().from("merchants").select("business_name, owner_name").eq("id", merchantId).maybeSingle()
     const business = m?.business_name || "your business"
     const first = (m?.owner_name || "").trim().split(/\s+/)[0]
-    const canReply = !!process.env.EMAIL_REPLY_TO
-    const hi = first ? `Hi ${escapeHtml(first)},` : "Hi there,"
-    const body =
-      `<p style="margin:0 0 12px">${hi}</p>` +
-      `<p style="margin:0 0 12px"><strong>${escapeHtml(business)}</strong> is set up on VLYR. Here's how to get your first ratings:</p>` +
-      `<ol style="margin:0 0 12px;padding-left:20px">` +
-      `<li style="margin-bottom:6px"><strong>Print your stickers</strong> on US Letter sticker paper at 100% size.</li>` +
-      `<li style="margin-bottom:6px"><strong>Put one on every order.</strong> Each sticker has its own QR code.</li>` +
-      `<li><strong>Happy customers</strong> are guided to Google; <strong>1–3 star feedback</strong> comes straight to you, by email and on your dashboard.</li>` +
-      `</ol>` +
-      (canReply ? `<p style="margin:0">Questions? Just reply to this email.</p>` : "")
-    const text = `${first ? `Hi ${first},` : "Hi there,"}\n\n${business} is set up on VLYR.\n\n1. Print your stickers on US Letter sticker paper at 100% size.\n2. Put one on every order. Each sticker has its own QR code.\n3. Happy customers are guided to Google; 1–3 star feedback comes straight to you.\n\nPrint your stickers: ${appUrl("/dashboard/stickers")}${canReply ? "\n\nQuestions? Just reply to this email." : ""}`
-    await sendEmail({
-      to: s.email,
-      subject: `Welcome to VLYR, ${business} is ready`,
-      html: emailLayout({ preheader: "Print your stickers and start collecting ratings.", heading: "You're all set", body, button: { label: "Print your stickers", href: appUrl("/dashboard/stickers") }, footer: "VLYR, operated by Mare LLC." }),
-      text,
-      tag: "welcome",
-    })
+    await sendEmail({ to: s.email, ...welcomeEmail(first, business), tag: "welcome" })
   } catch (e) {
     console.error("[email] welcome email failed:", e)
+  }
+}
+
+export function welcomeEmail(first: string, business: string) {
+  const canReply = !!process.env.EMAIL_REPLY_TO
+  const step = (n: number, title: string, body: string) =>
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>` +
+    `<td width="40" valign="top"><div style="width:28px;height:28px;border-radius:14px;background:#FFE100;color:#1D1D1F;font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;font-size:13px;line-height:28px;font-weight:600;text-align:center">${n}</div></td>` +
+    `<td valign="top" style="font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#1D1D1F"><strong style="font-weight:600">${title}</strong><br><span style="color:#6E6E73">${body}</span></td>` +
+    `</tr></table>`
+  const blocks = [
+    paragraph(`${first ? `Hi ${escapeHtml(first)},` : "Hi there,"}<br><strong style="font-weight:600">${escapeHtml(business)}</strong> is set up and ready to collect ratings.`),
+    step(1, "Print your stickers", "US Letter sticker paper, printed at 100% (Actual size)."),
+    step(2, "Add one to every order", "Each sticker has its own QR code, so every rating is tied to one order."),
+    step(3, "Hear from every customer", "Happy customers are invited to Google. 1–3 star feedback comes privately to you, by email and on your dashboard."),
+    ...(canReply ? [paragraph(`<span style="color:#6E6E73">Questions? Just reply to this email.</span>`)] : []),
+  ]
+  const text = `${first ? `Hi ${first},` : "Hi there,"}\n\n${business} is set up and ready to collect ratings.\n\n1. Print your stickers: US Letter sticker paper, printed at 100% (Actual size).\n2. Add one to every order. Each sticker has its own QR code.\n3. Happy customers are invited to Google. 1–3 star feedback comes privately to you.\n\nPrint your stickers: ${appUrl("/dashboard/stickers")}${canReply ? "\n\nQuestions? Just reply to this email." : ""}`
+  return {
+    subject: `Welcome to VLYR. ${business} is ready.`,
+    html: emailLayout({ preheader: "Print your stickers and start hearing from every customer.", eyebrow: "Welcome to VLYR", heading: "You're all set.", blocks, button: { label: "Print your stickers", href: appUrl("/dashboard/stickers") }, footer: "VLYR · Mare LLC" }),
+    text,
   }
 }
