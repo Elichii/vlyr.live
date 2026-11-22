@@ -17,8 +17,13 @@ const VERIFIED_FOR_MS = 60 * 60 * 1000
 
 export class PhoneCodeError extends Error {}
 
-/** Customer phone codes need texting to be switched on. */
-export const customerPhoneVerificationOn = () => alertsLive()
+/**
+ * Texting codes to customers needs its own switch, CUSTOMER_SMS_LIVE=true:
+ * the approved Twilio campaign covers texts to business owners only, so this
+ * stays off until the campaign is updated to include customer codes.
+ * While off, customers can still leave a number (unconfirmed).
+ */
+export const customerPhoneVerificationOn = () => alertsLive() && process.env.CUSTOMER_SMS_LIVE === "true"
 
 const hash = (id: string, code: string) =>
   createHash("sha256").update(`${id}:${code}:${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`).digest("hex")
